@@ -1,9 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { removeDatabaseFiles } from './database';
 
 describe('AppController', () => {
   let appController: AppController;
+
+  process.once('exit', () => {
+    void removeDatabaseFiles();
+  });
+
+  beforeAll(async () => {
+    await removeDatabaseFiles();
+  });
 
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
@@ -15,8 +24,14 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should send the index.html file for the root route', () => {
+      const res = {
+        sendFile: jest.fn().mockReturnThis(),
+      } as any;
+
+      appController.getHello(res);
+
+      expect(res.sendFile).toHaveBeenCalledWith('index.html', { root: '.' });
     });
   });
 
@@ -35,5 +50,9 @@ describe('AppController', () => {
       );
       expect(result.id).toBeGreaterThan(0);
     });
+  });
+
+  afterAll(async () => {
+    await removeDatabaseFiles();
   });
 });
