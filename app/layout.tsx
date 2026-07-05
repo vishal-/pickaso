@@ -17,7 +17,8 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "Pickaso — Enterprise-Grade Media Infrastructure",
-  description: "Pluggable, lightning-fast media layer with native multi-tenancy for your SaaS.",
+  description:
+    "Pluggable, lightning-fast media layer with native multi-tenancy for your SaaS.",
 };
 
 export default function RootLayout({
@@ -26,8 +27,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${plusJakarta.variable} ${spaceGrotesk.variable} h-full`} suppressHydrationWarning>
-      <body className="min-h-full flex flex-col"><AuthProvider>{children}</AuthProvider></body>
+    <html
+      lang="en"
+      className={`${plusJakarta.variable} ${spaceGrotesk.variable} h-full`}
+      suppressHydrationWarning
+    >
+      <body className="min-h-screen bg-[#030712] text-slate-100">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
