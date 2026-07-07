@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAppById } from "@/lib/apps";
 import { getSessionTenantId } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
+import { ApiKeyManager } from "@/components/ApiKeyManager";
 
 export default async function AppDetailPage({
   params,
@@ -19,6 +21,11 @@ export default async function AppDetailPage({
   if (!app) {
     notFound();
   }
+
+  const apiKeys = await prisma.apiKey.findMany({
+    where: { appId: id },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -51,63 +58,9 @@ export default async function AppDetailPage({
           </div>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl shadow-black/20">
-              <div className="grid gap-4 sm:grid-cols-3">
-                {app.metrics.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-xl border border-white/10 bg-white/5 p-4"
-                  >
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      {item.label}
-                    </p>
-                    <p className="mt-2 text-xl font-semibold text-white">
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
-              <h2 className="text-lg font-semibold text-white">Highlights</h2>
-              <ul className="mt-4 space-y-3">
-                {app.highlights.map((item) => (
-                  <li key={item} className="flex gap-3 text-sm text-slate-300">
-                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-400" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-indigo-300">
-              Workspace info
-            </p>
-            <div className="mt-5 space-y-4 text-sm text-slate-300">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <span className="text-slate-400">Owner</span>
-                <span className="font-medium text-white">{app.owner}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <span className="text-slate-400">Plan</span>
-                <span className="font-medium text-white">{app.plan}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <span className="text-slate-400">Region</span>
-                <span className="font-medium text-white">{app.region}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Last deploy</span>
-                <span className="font-medium text-white">{app.lastDeploy}</span>
-              </div>
-            </div>
-          </div>
-        </section>
+        <div className="space-y-6">
+          <ApiKeyManager appId={id} initialKeys={apiKeys} />
+        </div>
       </div>
     </div>
   );

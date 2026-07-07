@@ -41,15 +41,23 @@ model App {
   @@index([tenantId])
 }
 
+enum ApiKeyScope {
+  ALL
+  READ
+  WRITE
+  DELETE
+}
+
 model ApiKey {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  key         String   @unique
-  scopes      String[] @default(["all"])
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  key         String        @unique
+  scopes      ApiKeyScope[] @default([ALL])
 
-  createdAt   DateTime @default(now())
+  createdAt   DateTime      @default(now())
 
-  appId        String   @db.Uuid
-  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId        String        @db.Uuid
+  app          App           @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([appId])
 }
