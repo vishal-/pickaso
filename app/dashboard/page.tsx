@@ -1,4 +1,9 @@
+"use client";
+
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 
 const stats = [
   { label: "Total Assets", value: "0", icon: "🖼️", change: "—" },
@@ -8,6 +13,12 @@ const stats = [
 ];
 
 const quickActions = [
+  {
+    label: "Manage Apps",
+    desc: "Create and review active applications in your workspace",
+    icon: "📱",
+    href: "/apps",
+  },
   {
     label: "Upload Asset",
     desc: "Add images or files to your workspace",
@@ -29,6 +40,32 @@ const quickActions = [
 ];
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { user, loading, logout } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [user, loading, router]);
+
+  const handleSignOut = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      await logout();
+      router.push("/login");
+    } catch (error) {
+      console.error("Sign out failed", error);
+    }
+  };
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#030712]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top nav */}
@@ -61,11 +98,17 @@ export default function DashboardPage() {
             Dashboard
           </span>
           <Link
-            href="/login"
+            href="/apps"
             className="text-xs text-gray-400 hover:text-gray-200 border border-white/10 rounded-full px-3 py-1.5 transition-colors"
           >
-            Sign out
+            Apps
           </Link>
+          <button
+            onClick={handleSignOut}
+            className="text-xs text-gray-400 hover:text-gray-200 border border-white/10 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
+          >
+            Sign out
+          </button>
         </div>
       </header>
 

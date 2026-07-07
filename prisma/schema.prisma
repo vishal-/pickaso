@@ -11,7 +11,8 @@ generator client {
 // Maps directly to Neon's auth table
 // ==========================================
 model Tenant {
-  id            String    @id @db.Uuid
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  firebaseUid   String    @unique
   email         String    @unique
   emailVerified Boolean   @default(false)
   name          String?

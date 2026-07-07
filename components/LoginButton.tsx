@@ -1,53 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { authClient } from "@/lib/auth";
-
-type SessionUser = {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-};
-
-type SessionData = {
-  user?: SessionUser | null;
-};
+import { useAuth } from "@/components/AuthProvider";
 
 export function LoginButton() {
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    let active = true;
-
-    const loadSession = async () => {
-      try {
-        const result = await authClient.getSession();
-        if (active) {
-          setSession(result.data ?? null);
-        }
-      } catch (error) {
-        console.error("Failed to load session", error);
-      } finally {
-        if (active) setIsLoading(false);
-      }
-    };
-
-    loadSession();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (isLoading) {
+  if (loading) {
     return <div className="h-8 w-24 animate-pulse rounded-full bg-white/10" />;
   }
 
-  if (session?.user) {
-    const displayName = session.user.name || session.user.email || "User";
-    const avatarSrc = session.user.image || "";
+  if (user) {
+    const displayName = user.displayName || user.email || "User";
+    const avatarSrc = user.photoURL || "";
 
     return (
       <Link

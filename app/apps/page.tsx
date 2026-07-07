@@ -1,15 +1,24 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { getApps } from "@/lib/apps";
+import { useAuth } from "@/components/AuthProvider";
 
 const initialApps = getApps();
 
 export default function AppsPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [name, setName] = useState("");
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/login");
+    }
+  }, [user, authLoading, router]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apps, setApps] = useState(initialApps);
@@ -45,6 +54,14 @@ export default function AppsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#030712]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+      </div>
+    );
   }
 
   return (
