@@ -51,18 +51,24 @@ export async function POST(
 
     // Generate secure random key
     const rawKey = `pk_${crypto.randomBytes(24).toString("hex")}`;
+    const hashedKey = crypto.createHash("sha256").update(rawKey).digest("hex");
 
     // Persist key to database
     const apiKey = await prisma.apiKey.create({
       data: {
         name,
-        key: rawKey,
+        key: hashedKey,
         scopes,
         appId,
       },
     });
 
-    return NextResponse.json({ apiKey }, { status: 201 });
+    return NextResponse.json({
+      apiKey: {
+        ...apiKey,
+        key: rawKey // Return the raw unhashed key once so the user can copy it
+      }
+    }, { status: 201 });
   } catch (error) {
     console.error("Failed to generate API key:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";

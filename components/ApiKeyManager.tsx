@@ -261,12 +261,8 @@ export function ApiKeyManager({ appId, initialKeys }: ApiKeyManagerProps) {
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-white truncate">{k.name}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <code className="text-[10px] font-mono text-indigo-300">
-                        {redactKey(k.key)}
-                      </code>
-                      <span className="h-1 w-1 rounded-full bg-slate-500" />
                       <span className="text-[10px] text-slate-400">
-                        {new Date(k.createdAt).toLocaleDateString()}
+                        Created on {new Date(k.createdAt).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
