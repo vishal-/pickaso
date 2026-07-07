@@ -1,3 +1,5 @@
+import { prisma } from "./prisma";
+
 export type AppRecord = {
   id: string;
   name: string;
@@ -12,116 +14,28 @@ export type AppRecord = {
   highlights: string[];
 };
 
-const initialApps: AppRecord[] = [
-  {
-    id: "aurora",
-    name: "Aurora Studio",
-    owner: "Design Systems",
-    status: "Active",
-    description:
-      "A collaborative media workspace for launching campaigns and product assets.",
-    updated: "2h ago",
-    plan: "Growth",
-    region: "us-east-1",
-    lastDeploy: "2 hours ago",
-    metrics: [
-      { label: "Uploads today", value: "184" },
-      { label: "Storage used", value: "4.2 GB" },
-      { label: "API calls", value: "12.8k" },
-    ],
-    highlights: [
-      "CDN delivery enabled for all uploaded assets",
-      "Signing policies configured for secure previews",
-      "Multi-tenant configs are ready for new teams",
-    ],
-  },
-  {
-    id: "northwind",
-    name: "Northwind Commerce",
-    owner: "Commerce Platform",
-    status: "Review",
-    description:
-      "Serves onboarding media for product pages, emails, and storefront feeds.",
-    updated: "Yesterday",
-    plan: "Scale",
-    region: "eu-west-1",
-    lastDeploy: "Yesterday",
-    metrics: [
-      { label: "Uploads today", value: "96" },
-      { label: "Storage used", value: "2.6 GB" },
-      { label: "API calls", value: "6.1k" },
-    ],
-    highlights: [
-      "Image optimization is enabled on product imagery",
-      "Review queue is waiting on final brand assets",
-      "Webhook sync is active for order updates",
-    ],
-  },
-  {
-    id: "lumen",
-    name: "Lumen Analytics",
-    owner: "Data Experience",
-    status: "Paused",
-    description: "Manages reporting assets and audit-friendly image archives.",
-    updated: "3d ago",
-    plan: "Starter",
-    region: "ap-southeast-2",
-    lastDeploy: "3 days ago",
-    metrics: [
-      { label: "Uploads today", value: "24" },
-      { label: "Storage used", value: "1.1 GB" },
-      { label: "API calls", value: "1.9k" },
-    ],
-    highlights: [
-      "Archive retention windows are configured",
-      "Background processing is paused for maintenance",
-      "Audit logs are being reviewed for compliance",
-    ],
-  },
-];
-
-let apps: AppRecord[] = initialApps.map((app) => ({ ...app }));
-
-function toSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-export function getApps() {
-  return apps;
-}
-
-export function getAppById(id: string) {
-  return apps.find((app) => app.id === id);
-}
-
-export function createApp(name: string) {
-  const trimmedName = name.trim();
-
-  if (!trimmedName) {
-    throw new Error("App name is required.");
+function mapDbAppToRecord(app: { id: string; name: string; createdAt: Date }): AppRecord {
+  const diffMs = Date.now() - app.createdAt.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  let updatedStr = "Just now";
+  if (diffHours > 0) {
+    updatedStr = diffHours === 1 ? "1h ago" : `${diffHours}h ago`;
+    if (diffHours >= 24) {
+      const diffDays = Math.floor(diffHours / 24);
+      updatedStr = diffDays === 1 ? "Yesterday" : `${diffDays}d ago`;
+    }
   }
 
-  let id = toSlug(trimmedName);
-  let suffix = 1;
-  while (apps.some((app) => app.id === id)) {
-    id = `${toSlug(trimmedName)}-${suffix}`;
-    suffix += 1;
-  }
-
-  const app: AppRecord = {
-    id,
-    name: trimmedName,
+  return {
+    id: app.id,
+    name: app.name,
     owner: "You",
     status: "Active",
-    description: `A new app workspace for ${trimmedName}.`,
-    updated: "Just now",
-    plan: "Starter",
+    description: `Serves onboarding media for product pages, storefront feeds, and assets for ${app.name}.`,
+    updated: updatedStr,
+    plan: "Growth",
     region: "us-east-1",
-    lastDeploy: "Just now",
+    lastDeploy: updatedStr,
     metrics: [
       { label: "Uploads today", value: "0" },
       { label: "Storage used", value: "0 GB" },
@@ -133,7 +47,35 @@ export function createApp(name: string) {
       "Invite teammates to start using the workspace",
     ],
   };
+}
 
-  apps = [app, ...apps];
-  return app;
+export async function getApps(tenantId: string): Promise<AppRecord[]> {
+  const dbApps = await prisma.app.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: "desc" },
+  });
+  return dbApps.map(mapDbAppToRecord);
+}
+
+export async function getAppById(id: string, tenantId: string): Promise<AppRecord | null> {
+  const dbApp = await prisma.app.findFirst({
+    where: { id, tenantId },
+  });
+  return dbApp ? mapDbAppToRecord(dbApp) : null;
+}
+
+export async function createApp(name: string, tenantId: string): Promise<AppRecord> {
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error("App name is required.");
+  }
+
+  const app = await prisma.app.create({
+    data: {
+      name: trimmedName,
+      tenantId,
+    },
+  });
+
+  return mapDbAppToRecord(app);
 }

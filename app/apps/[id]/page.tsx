@@ -1,14 +1,20 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getAppById } from "@/lib/apps";
+import { getSessionTenantId } from "@/lib/session";
 
 export default async function AppDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tenantId = await getSessionTenantId();
+  if (!tenantId) {
+    redirect("/login");
+  }
+
   const { id } = await params;
-  const app = getAppById(id);
+  const app = await getAppById(id, tenantId);
 
   if (!app) {
     notFound();
