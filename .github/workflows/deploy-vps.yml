@@ -1,0 +1,66 @@
+name: Deploy to VPS (Production)
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy over SSH
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Trust VPS host key
+        shell: bash
+        env:
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT || '22' }}
+        run: |
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy on VPS
+        shell: bash
+        env:
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          PORT: ${{ secrets.PORT || '22' }}
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" << 'EOF'
+            set -e
+
+            cd "/opt/apps/pickaso"
+
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
+
+            npm ci
+            npx prisma generate
+            npx prisma migrate deploy
+            npm run build
+
+            if sudo systemctl is-active --quiet "pickaso"; then
+              sudo systemctl restart "pickaso"
+            else
+              sudo systemctl start "pickaso"
+            fi
+          EOF
