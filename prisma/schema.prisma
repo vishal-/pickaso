@@ -91,18 +91,7 @@ model Image {
   height        Int
   size          Int
 
-  // Upload/processing status
-  status        ImageStatus @default(PROCESSING)
-
-  // Flexible storage metadata
-  // Example:
-  // {
-  //   "original": {...},
-  //   "webp": {...},
-  //   "thumbnail": {...},
-  //   "medium": {...}
-  // }
-  variants      Json
+  options       Json
 
   // Ownership (denormalized for fast auth)
   tenantId      String   @db.Uuid
@@ -120,13 +109,5 @@ model Image {
   @@index([tenantId])
   @@index([appId])
   @@index([collectionId])
-  @@index([status])
   @@index([createdAt])
-}
-
-enum ImageStatus {
-  PROCESSING
-  READY
-  FAILED
-  DELETED
 }
