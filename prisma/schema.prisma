@@ -6,10 +6,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ==========================================
-// Tenant (Neon Auth User)
-// Maps directly to Neon's auth table
-// ==========================================
 model Tenant {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   firebaseUid   String    @unique
