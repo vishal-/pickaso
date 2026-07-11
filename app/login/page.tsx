@@ -6,9 +6,11 @@ import { useState } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { useDialog } from "@/components/DialogProvider";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { alert } = useDialog();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
@@ -19,7 +21,7 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (error) {
       console.error("Google login failed", error);
-      alert("Google sign-in could not be completed. Please try again.");
+      await alert("Google sign-in could not be completed. Please try again.", "Sign-in failed");
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useDialog } from "@/components/DialogProvider";
 
 type ApiKeyData = {
   id: string;
@@ -16,6 +17,7 @@ interface ApiKeyManagerProps {
 }
 
 export function ApiKeyManager({ appId, initialKeys }: ApiKeyManagerProps) {
+  const { alert, confirm } = useDialog();
   const [keys, setKeys] = useState<ApiKeyData[]>(initialKeys);
   const [name, setName] = useState("");
   const [accessType, setAccessType] = useState<"ALL" | "CUSTOM">("ALL");
@@ -24,6 +26,7 @@ export function ApiKeyManager({ appId, initialKeys }: ApiKeyManagerProps) {
   const [deleteScope, setDeleteScope] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [revokingKeyId, setRevokingKeyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
 
@@ -81,14 +84,45 @@ export function ApiKeyManager({ appId, initialKeys }: ApiKeyManagerProps) {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert("API key copied to clipboard!");
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      await alert("API key copied to clipboard!", "Copied");
+    } catch {
+      setError("Unable to copy API key to clipboard.");
+    }
   };
 
-  const redactKey = (key: string) => {
-    if (key.length <= 10) return key;
-    return `${key.slice(0, 5)}...${key.slice(-4)}`;
+  const handleRevokeKey = async (keyId: string) => {
+    setError(null);
+
+    const confirmed = await confirm(
+      "Revoke this API key? This action cannot be undone.",
+      "Revoke API Key"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setRevokingKeyId(keyId);
+
+    try {
+      const response = await fetch(`/api/apps/${appId}/keys/${keyId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to revoke key.");
+      }
+
+      setKeys((current) => current.filter((k) => k.id !== keyId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to revoke key.");
+    } finally {
+      setRevokingKeyId(null);
+    }
   };
 
   return (
@@ -266,15 +300,25 @@ export function ApiKeyManager({ appId, initialKeys }: ApiKeyManagerProps) {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-wrap justify-end sm:max-w-[50%] shrink-0">
-                    {k.scopes.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-semibold text-slate-300 uppercase tracking-wide"
-                      >
-                        {s === "ALL" ? "Full Access" : s}
-                      </span>
-                    ))}
+                  <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                    <div className="flex items-center gap-1 flex-wrap justify-end sm:max-w-[260px]">
+                      {k.scopes.map((s) => (
+                        <span
+                          key={s}
+                          className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-semibold text-slate-300 uppercase tracking-wide"
+                        >
+                          {s === "ALL" ? "Full Access" : s}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeKey(k.id)}
+                      disabled={revokingKeyId === k.id}
+                      className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-300 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {revokingKeyId === k.id ? "Revoking..." : "Revoke key"}
+                    </button>
                   </div>
                 </div>
               ))}
