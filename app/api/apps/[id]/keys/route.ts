@@ -2,14 +2,20 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionTenantId } from "@/lib/session";
 import crypto from "crypto";
+import logger from "@/lib/logger";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  logger.info({ route: "/api/apps/[id]/keys", method: "POST" }, "Incoming API key creation request");
   try {
     const tenantId = await getSessionTenantId();
     if (!tenantId) {
+      logger.warn(
+        { route: "/api/apps/[id]/keys", method: "POST" },
+        "Unauthorized API key creation request"
+      );
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -20,6 +26,10 @@ export async function POST(
       where: { id: appId, tenantId },
     });
     if (!app) {
+      logger.warn(
+        { route: "/api/apps/[id]/keys", method: "POST", tenantId, appId },
+        "App not found or access denied for API key creation"
+      );
       return NextResponse.json({ error: "App not found or access denied" }, { status: 404 });
     }
 
@@ -63,6 +73,18 @@ export async function POST(
       },
     });
 
+    logger.info(
+      {
+        route: "/api/apps/[id]/keys",
+        method: "POST",
+        tenantId,
+        appId,
+        apiKeyId: apiKey.id,
+        scopeCount: scopes.length,
+      },
+      "API key created"
+    );
+
     return NextResponse.json({
       apiKey: {
         ...apiKey,
@@ -70,7 +92,10 @@ export async function POST(
       }
     }, { status: 201 });
   } catch (error) {
-    console.error("Failed to generate API key:", error);
+    logger.error(
+      { route: "/api/apps/[id]/keys", method: "POST", error },
+      "Failed to generate API key"
+    );
     const message = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
