@@ -78,11 +78,13 @@ export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
+      logger.warn({ route: "/api/v1/upload", method: "POST" }, "Unauthorized request: Invalid or missing authorization header");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const rawApiKey = authHeader.slice("Bearer ".length).trim();
     if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
+      logger.warn({ route: "/api/v1/upload", method: "POST" }, "Unauthorized request: Invalid API key format");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -101,22 +103,35 @@ export async function POST(request: Request) {
     });
 
     if (!apiKey) {
+      logger.warn({ route: "/api/v1/upload", method: "POST" }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const canUpload = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("WRITE");
     if (!canUpload) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: API key lacks required scope"
+      );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.toLowerCase().includes("multipart/form-data")) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId, contentType },
+        "Bad Request: Content-Type must be multipart/form-data"
+      );
       return NextResponse.json({ error: "Content-Type must be multipart/form-data" }, { status: 400 });
     }
 
     const formData = await request.formData();
     const imagePart = formData.get("image");
     if (!(imagePart instanceof File)) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Bad Request: image is required"
+      );
       return NextResponse.json({ error: "image is required" }, { status: 400 });
     }
 
@@ -126,6 +141,10 @@ export async function POST(request: Request) {
       : "default";
 
     if (!COLLECTION_NAME_PATTERN.test(requestedCollection)) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId, collection: requestedCollection },
+        "Bad Request: collection must be lowercase alphanumeric only"
+      );
       return NextResponse.json(
         { error: "collection must be lowercase alphanumeric only" },
         { status: 400 }
@@ -154,6 +173,10 @@ export async function POST(request: Request) {
     const outputSpec = getOutputSpec(sourceMetadata.format);
 
     if (!outputSpec) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId, format: sourceMetadata.format },
+        "Bad Request: Unsupported image format"
+      );
       return NextResponse.json({ error: "Unsupported image format" }, { status: 400 });
     }
 
@@ -165,6 +188,10 @@ export async function POST(request: Request) {
     const height = finalMetadata.height;
 
     if (!width || !height) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Bad Request: Invalid image dimensions"
+      );
       return NextResponse.json({ error: "Invalid image dimensions" }, { status: 400 });
     }
 

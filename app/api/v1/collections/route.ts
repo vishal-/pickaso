@@ -11,11 +11,13 @@ export async function GET(request: Request) {
   try {
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
+      logger.warn({ route: "/api/v1/collections", method: "GET" }, "Unauthorized request: Invalid or missing authorization header");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const rawApiKey = authHeader.slice("Bearer ".length).trim();
     if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
+      logger.warn({ route: "/api/v1/collections", method: "GET" }, "Unauthorized request: Invalid API key format");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -34,11 +36,16 @@ export async function GET(request: Request) {
     });
 
     if (!apiKey) {
+      logger.warn({ route: "/api/v1/collections", method: "GET" }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const canRead = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("READ");
     if (!canRead) {
+      logger.warn(
+        { route: "/api/v1/collections", method: "GET", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: API key lacks required scope"
+      );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -59,6 +66,11 @@ export async function GET(request: Request) {
         createdAt: "desc",
       },
     });
+
+    logger.info(
+      { route: "/api/v1/collections", method: "GET", appId: apiKey.app.id, tenantId: apiKey.app.tenantId, count: collections.length },
+      "Successfully listed collections"
+    );
 
     return NextResponse.json(
       {

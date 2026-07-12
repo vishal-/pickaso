@@ -59,16 +59,20 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  logger.info({ route: "/api/v1/collection/[id]", method: "GET" }, "Incoming collection images request");
-
+  let id: string | undefined;
   try {
+    ({ id } = await params);
+    logger.info({ route: "/api/v1/collection/[id]", method: "GET", collectionId: id }, "Incoming collection images request");
+
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
+      logger.warn({ route: "/api/v1/collection/[id]", method: "GET", collectionId: id }, "Unauthorized request: Invalid or missing authorization header");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const rawApiKey = authHeader.slice("Bearer ".length).trim();
     if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
+      logger.warn({ route: "/api/v1/collection/[id]", method: "GET", collectionId: id }, "Unauthorized request: Invalid API key format");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -87,15 +91,18 @@ export async function GET(
     });
 
     if (!apiKey) {
+      logger.warn({ route: "/api/v1/collection/[id]", method: "GET", collectionId: id }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const canRead = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("READ");
     if (!canRead) {
+      logger.warn(
+        { route: "/api/v1/collection/[id]", method: "GET", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: API key lacks required scope"
+      );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-
-    const { id } = await params;
 
     const collection = await prisma.collection.findFirst({
       where: {
@@ -108,6 +115,10 @@ export async function GET(
     });
 
     if (!collection) {
+      logger.warn(
+        { route: "/api/v1/collection/[id]", method: "GET", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Collection not found"
+      );
       return NextResponse.json({ error: "Collection not found" }, { status: 404 });
     }
 
@@ -126,6 +137,11 @@ export async function GET(
       },
     });
 
+    logger.info(
+      { route: "/api/v1/collection/[id]", method: "GET", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId, imageCount: images.length },
+      "Successfully fetched collection images"
+    );
+
     return NextResponse.json(
       {
         images: images.map((image) => ({
@@ -138,7 +154,7 @@ export async function GET(
     );
   } catch (error) {
     logger.error(
-      { route: "/api/v1/collection/[id]", method: "GET", error },
+      { route: "/api/v1/collection/[id]", method: "GET", collectionId: id, error },
       "Failed to fetch collection images"
     );
     const message = error instanceof Error ? error.message : "Internal Server Error";
@@ -150,16 +166,20 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  logger.info({ route: "/api/v1/collection/[id]", method: "DELETE" }, "Incoming collection delete request");
-
+  let id: string | undefined;
   try {
+    ({ id } = await params);
+    logger.info({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Incoming collection delete request");
+
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
+      logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: Invalid or missing authorization header");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const rawApiKey = authHeader.slice("Bearer ".length).trim();
     if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
+      logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: Invalid API key format");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -178,15 +198,18 @@ export async function DELETE(
     });
 
     if (!apiKey) {
+      logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const canDelete = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("DELETE");
     if (!canDelete) {
+      logger.warn(
+        { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: API key lacks required scope"
+      );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-
-    const { id } = await params;
 
     const collection = await prisma.collection.findFirst({
       where: {
@@ -200,6 +223,10 @@ export async function DELETE(
     });
 
     if (!collection) {
+      logger.warn(
+        { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Collection not found for deletion"
+      );
       return NextResponse.json({ error: "Collection not found" }, { status: 404 });
     }
 
@@ -227,6 +254,7 @@ export async function DELETE(
           {
             route: "/api/v1/collection/[id]",
             method: "DELETE",
+            collectionId: collection.id,
             imageId: image.id,
             objectKey,
             error,
@@ -242,6 +270,19 @@ export async function DELETE(
       },
     });
 
+    logger.info(
+      {
+        route: "/api/v1/collection/[id]",
+        method: "DELETE",
+        collectionId: collection.id,
+        collectionName: collection.name,
+        appId: apiKey.app.id,
+        tenantId: apiKey.app.tenantId,
+        deletedImagesCount: images.length,
+      },
+      "Successfully deleted collection and its images"
+    );
+
     return NextResponse.json(
       {
         success: true,
@@ -253,7 +294,7 @@ export async function DELETE(
     );
   } catch (error) {
     logger.error(
-      { route: "/api/v1/collection/[id]", method: "DELETE", error },
+      { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id, error },
       "Failed to delete collection"
     );
     const message = error instanceof Error ? error.message : "Internal Server Error";
