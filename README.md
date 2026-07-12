@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pickaso
 
-## Getting Started
+Pickaso is a multi-tenant image management backend and dashboard built with Next.js, Prisma, and PostgreSQL. It provides API-key based upload and media management APIs backed by Cloudflare R2, with per-tenant isolation and app-level access control.
 
-First, run the development server:
+## What This Project Does
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Supports secure image upload using API keys.
+- Strips EXIF/metadata on upload using Sharp.
+- Stores image objects in Cloudflare R2 using tenant-scoped paths.
+- Persists image, collection, and ownership metadata in PostgreSQL via Prisma.
+- Provides collection and image management APIs (list, fetch, delete).
+- Includes a web dashboard for app and key management.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Next.js (App Router + Route Handlers)
+- TypeScript
+- Prisma ORM
+- PostgreSQL
+- Cloudflare R2 (S3-compatible)
+- Sharp (image processing)
+- Firebase Auth (tenant/user session sync for dashboard flows)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
+- [app](app): App Router pages and API route handlers.
+- [app/api](app/api): Session-authenticated internal APIs for dashboard/app management.
+- [app/api/v1](app/api/v1): API-key authenticated public API endpoints.
+- [components](components): UI components.
+- [lib](lib): Shared infrastructure code (Prisma client, logger, auth/session helpers).
+- [prisma](prisma): Database schema and migrations.
+- [docs/api-reference.md](docs/api-reference.md): Complete API request/response examples.
 
-To learn more about Next.js, take a look at the following resources:
+## API Reference
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Use the full endpoint documentation here:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [docs/api-reference.md](docs/api-reference.md)
 
-## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- API keys are stored hashed and compared by hashing inbound Bearer tokens.
+- Public API routes under /api/v1 enforce scope checks (READ/WRITE/DELETE/ALL).
+- Collection and image operations are constrained to the app associated with the provided API key.
