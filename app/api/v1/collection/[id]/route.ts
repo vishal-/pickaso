@@ -256,29 +256,53 @@ export async function DELETE(
       select: {
         id: true,
         options: true,
+        variants: {
+          select: {
+            options: true,
+          },
+        },
       },
     });
 
     for (const image of images) {
       const objectKey = getImageObjectKey(image.options);
-      if (!objectKey) {
-        continue;
+      if (objectKey) {
+        try {
+          await deleteR2ObjectIfPossible(objectKey);
+        } catch (error) {
+          logger.warn(
+            {
+              route: "/api/v1/collection/[id]",
+              method: "DELETE",
+              collectionId: collection.id,
+              imageId: image.id,
+              objectKey,
+              error,
+            },
+            "Failed to delete image object from R2 during collection delete"
+          );
+        }
       }
 
-      try {
-        await deleteR2ObjectIfPossible(objectKey);
-      } catch (error) {
-        logger.warn(
-          {
-            route: "/api/v1/collection/[id]",
-            method: "DELETE",
-            collectionId: collection.id,
-            imageId: image.id,
-            objectKey,
-            error,
-          },
-          "Failed to delete image object from R2 during collection delete"
-        );
+      for (const variant of image.variants) {
+        const variantKey = getImageObjectKey(variant.options);
+        if (variantKey) {
+          try {
+            await deleteR2ObjectIfPossible(variantKey);
+          } catch (error) {
+            logger.warn(
+              {
+                route: "/api/v1/collection/[id]",
+                method: "DELETE",
+                collectionId: collection.id,
+                imageId: image.id,
+                variantKey,
+                error,
+              },
+              "Failed to delete variant image object from R2 during collection delete"
+            );
+          }
+        }
       }
     }
 

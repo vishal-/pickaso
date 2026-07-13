@@ -35,7 +35,7 @@ Body (multipart/form-data)
 
 Notes
 - EXIF/metadata is stripped using Sharp during upload.
-- Object path in R2: {tenantId}/{imageUuid}.{extension}
+- Object path in R2: {slug}.{extension} (stored directly in the bucket root)
 
 Sample Request (curl)
 ```bash
@@ -72,9 +72,13 @@ Endpoint
 Headers
 - Authorization: Bearer pk_xxxxx
 
+Query Params (optional)
+- page: page number (defaults to 1)
+- limit: items per page (defaults to 10)
+
 Sample Request (curl)
 ```bash
-curl -X GET "http://localhost:3000/api/v1/collections" \
+curl -X GET "http://localhost:3000/api/v1/collections?page=1&limit=2" \
   -H "Authorization: Bearer pk_xxxxx"
 ```
 
@@ -92,7 +96,13 @@ Sample Success Response (200)
       "name": "default",
       "imageCount": 3
     }
-  ]
+  ],
+  "pagination": {
+    "total": 2,
+    "pages": 1,
+    "page": 1,
+    "limit": 2
+  }
 }
 ```
 
@@ -200,4 +210,41 @@ Sample Success Response (200)
 Sample Not Found Response (404)
 ```json
 { "error": "Image not found" }
+```
+
+## 6) Get Image (Redirect & Variants)
+
+Endpoint
+- GET /api/v1/image/{slug.ext}
+
+Path Params
+- slug.ext: The 24-character slug + file extension (e.g. `myphotoname8P9sr7Hc6rpg.jpg`).
+
+Query Params (optional)
+- fmt: Convert the image to a target format (`webp`, `png`, `jpg`, `jpeg`, `avif`, `tiff`).
+- size: Resize the image to a target width (`sm` = 320px, `md` = 640px, `lg` = 1280px). Resizes maintaining aspect ratio (without enlargement).
+
+Behavior
+- If query parameters are provided and the variant does not exist yet:
+  - Downloads the original image from R2.
+  - Dynamically resizes/converts it using Sharp.
+  - Uploads the variant back to R2 as `{slug}_{size}.{fmt}`.
+  - Caches the variant metadata in the database.
+- Redirects (302) the client to the R2 public URL of the requested image or variant.
+- Returns `404 Not Found` if the original image is missing, the requested format/size is unsupported, or the request lacks an extension.
+
+Sample Request (curl)
+```bash
+curl -I "http://localhost:3000/api/v1/image/myphotoname8P9sr7Hc6rpg.jpg?fmt=webp&size=sm"
+```
+
+Sample Success Response (302 Redirect)
+```http
+HTTP/1.1 302 Found
+Location: https://pub-xxx.r2.dev/myphotoname8P9sr7Hc6rpg_sm.webp
+```
+
+Sample Validation Error (400)
+```json
+{ "error": "Unsupported image format requested" }
 ```
