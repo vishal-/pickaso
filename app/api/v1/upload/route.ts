@@ -231,7 +231,7 @@ export async function POST(request: Request) {
     const imageId = crypto.randomUUID();
     const slug = generateSlug(imagePart.name || "image");
     const objectName = `${slug}.${outputSpec.extension}`;
-    const objectKey = `${apiKey.app.tenantId}/${objectName}`;
+    const objectKey = objectName;
 
     const r2AccountId = getRequiredEnv("R2_ACCOUNT_ID");
     const r2AccessKeyId = getRequiredEnv("R2_ACCESS_KEY_ID");
