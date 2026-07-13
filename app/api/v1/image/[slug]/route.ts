@@ -15,6 +15,8 @@ const SIZE_MAP: Record<string, number> = {
   lg: 1280
 };
 
+const activeGenerations = new Map<string, Promise<string>>();
+
 function getOptionalEnv(name: string): string | null {
   return process.env[name] ?? null;
 }
@@ -203,120 +205,163 @@ export async function GET(
       }
     }
 
-    // 6. Generate variant (Cache miss)
-    const r2AccountId = getOptionalEnv("R2_ACCOUNT_ID");
-    const r2AccessKeyId = getOptionalEnv("R2_ACCESS_KEY_ID");
-    const r2SecretAccessKey = getOptionalEnv("R2_SECRET_ACCESS_KEY");
-    const r2Bucket = getOptionalEnv("R2_BUCKET");
-    const r2PublicBaseUrl = getOptionalEnv("R2_PUBLIC_BASE_URL");
+    // 6. Avoid concurrent generation for the same variant (Thundering Herd prevention)
+    const generationKey = `${image.id}_${targetSize}_${variantFormat}`;
+    let generationPromise = activeGenerations.get(generationKey);
 
-    if (!r2AccountId || !r2AccessKeyId || !r2SecretAccessKey || !r2Bucket || !r2PublicBaseUrl) {
-      logger.error("R2 configuration is incomplete");
-      return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    if (generationPromise) {
+      logger.info({ route: "/api/v1/image/[slug]", method: "GET", slug, targetSize, variantFormat }, "Waiting on concurrent generation");
+      try {
+        const variantUrl = await generationPromise;
+        return NextResponse.redirect(variantUrl, { status: 302 });
+      } catch (err) {
+        logger.error({ route: "/api/v1/image/[slug]", method: "GET", error: err }, "Concurrent generation failed, falling back to original");
+        const originalUrl = getImagePublicUrl(image.options);
+        if (originalUrl) {
+          return NextResponse.redirect(originalUrl, { status: 302 });
+        }
+        return NextResponse.json({ error: "Failed to get image" }, { status: 500 });
+      }
     }
 
-    const r2Client = new S3Client({
-      region: "auto",
-      endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: r2AccessKeyId,
-        secretAccessKey: r2SecretAccessKey,
-      },
-    });
+    // Define the variant generation execution logic
+    const executeGeneration = async (): Promise<string> => {
+      const r2AccountId = getOptionalEnv("R2_ACCOUNT_ID");
+      const r2AccessKeyId = getOptionalEnv("R2_ACCESS_KEY_ID");
+      const r2SecretAccessKey = getOptionalEnv("R2_SECRET_ACCESS_KEY");
+      const r2Bucket = getOptionalEnv("R2_BUCKET");
+      const r2PublicBaseUrl = getOptionalEnv("R2_PUBLIC_BASE_URL");
 
-    const originalKey = (image.options as any).key;
-    if (!originalKey) {
-      logger.error("Original object key missing in options");
-      return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-    }
+      if (!r2AccountId || !r2AccessKeyId || !r2SecretAccessKey || !r2Bucket || !r2PublicBaseUrl) {
+        throw new Error("R2 configuration is incomplete");
+      }
 
-    logger.info({ key: originalKey }, "Downloading original image from R2");
-    const s3Response = await r2Client.send(
-      new GetObjectCommand({
-        Bucket: r2Bucket,
-        Key: originalKey,
-      })
-    );
-
-    if (!s3Response.Body) {
-      throw new Error("Empty body from R2 response");
-    }
-
-    const originalBuffer = Buffer.from(await s3Response.Body.transformToByteArray());
-
-    // Process image using sharp
-    let sharpImg = sharp(originalBuffer);
-    
-    if (targetSize !== "original") {
-      const targetWidth = SIZE_MAP[targetSize];
-      sharpImg = sharpImg.resize({ width: targetWidth, withoutEnlargement: true });
-    }
-
-    const processedImg = encodeImage(sharpImg, variantFormat);
-    const variantBuffer = await processedImg.toBuffer();
-    const variantMetadata = await sharp(variantBuffer).metadata();
-
-    const width = variantMetadata.width || 0;
-    const height = variantMetadata.height || 0;
-
-    // Upload variant back to R2
-    const variantSlug = targetSize !== "original" ? `${image.slug}_${targetSize}` : image.slug;
-    const variantObjectName = `${variantSlug}.${variantFormat}`;
-    const variantObjectKey = variantObjectName;
-
-    logger.info({ key: variantObjectKey }, "Uploading variant back to R2");
-    await r2Client.send(
-      new PutObjectCommand({
-        Bucket: r2Bucket,
-        Key: variantObjectKey,
-        Body: variantBuffer,
-        ContentType: getMimeType(variantFormat),
-      })
-    );
-
-    const variantPublicUrl = toPublicUrl(r2PublicBaseUrl, variantObjectKey);
-
-    // Save variant to Database (without storing url)
-    try {
-      await prisma.imageVariant.create({
-        data: {
-          imageId: image.id,
-          slug: variantSlug,
-          format: variantFormat,
-          size: targetSize,
-          width,
-          height,
-          fileSize: variantBuffer.byteLength,
-          options: {
-            bucket: r2Bucket,
-            key: variantObjectKey,
+      // Check DB again, in case a concurrent request completed and saved it right before this executeGeneration started
+      const doubleCheckVariant = await prisma.imageVariant.findUnique({
+        where: {
+          imageId_size_format: {
+            imageId: image.id,
+            size: targetSize,
+            format: variantFormat,
           },
         },
       });
-      logger.info({ variantSlug, format: variantFormat, size: targetSize }, "Successfully created image variant in DB");
-    } catch (dbError: any) {
-      if (dbError.code === "P2002") {
-        const concurrentVariant = await prisma.imageVariant.findUnique({
-          where: {
-            imageId_size_format: {
-              imageId: image.id,
-              size: targetSize,
-              format: variantFormat,
+
+      if (doubleCheckVariant) {
+        const url = getImagePublicUrl(doubleCheckVariant.options);
+        if (url) return url;
+      }
+
+      const r2Client = new S3Client({
+        region: "auto",
+        endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: r2AccessKeyId,
+          secretAccessKey: r2SecretAccessKey,
+        },
+      });
+
+      const originalKey = (image.options as any).key;
+      if (!originalKey) {
+        throw new Error("Original object key missing in options");
+      }
+
+      logger.info({ key: originalKey }, "Downloading original image from R2");
+      const s3Response = await r2Client.send(
+        new GetObjectCommand({
+          Bucket: r2Bucket,
+          Key: originalKey,
+        })
+      );
+
+      if (!s3Response.Body) {
+        throw new Error("Empty body from R2 response");
+      }
+
+      const originalBuffer = Buffer.from(await s3Response.Body.transformToByteArray());
+
+      // Process image using sharp
+      let sharpImg = sharp(originalBuffer);
+      
+      if (targetSize !== "original") {
+        const targetWidth = SIZE_MAP[targetSize];
+        sharpImg = sharpImg.resize({ width: targetWidth, withoutEnlargement: true });
+      }
+
+      const processedImg = encodeImage(sharpImg, variantFormat);
+      const variantBuffer = await processedImg.toBuffer();
+      const variantMetadata = await sharp(variantBuffer).metadata();
+
+      const width = variantMetadata.width || 0;
+      const height = variantMetadata.height || 0;
+
+      // Upload variant back to R2
+      const variantSlug = targetSize !== "original" ? `${image.slug}_${targetSize}` : image.slug;
+      const variantObjectName = `${variantSlug}.${variantFormat}`;
+      const variantObjectKey = variantObjectName;
+
+      logger.info({ key: variantObjectKey }, "Uploading variant back to R2");
+      await r2Client.send(
+        new PutObjectCommand({
+          Bucket: r2Bucket,
+          Key: variantObjectKey,
+          Body: variantBuffer,
+          ContentType: getMimeType(variantFormat),
+        })
+      );
+
+      const variantPublicUrl = toPublicUrl(r2PublicBaseUrl, variantObjectKey);
+
+      // Save variant to Database (without storing url)
+      try {
+        await prisma.imageVariant.create({
+          data: {
+            imageId: image.id,
+            slug: variantSlug,
+            format: variantFormat,
+            size: targetSize,
+            width,
+            height,
+            fileSize: variantBuffer.byteLength,
+            options: {
+              bucket: r2Bucket,
+              key: variantObjectKey,
             },
           },
         });
-        if (concurrentVariant) {
-          const concurrentUrl = getImagePublicUrl(concurrentVariant.options);
-          if (concurrentUrl) {
-            logger.info("Serving concurrently created image variant");
-            return NextResponse.redirect(concurrentUrl, { status: 302 });
+        logger.info({ variantSlug, format: variantFormat, size: targetSize }, "Successfully created image variant in DB");
+      } catch (dbError: any) {
+        // Gracefully handle concurrent write conflicts
+        if (dbError.code === "P2002") {
+          const concurrentVariant = await prisma.imageVariant.findUnique({
+            where: {
+              imageId_size_format: {
+                imageId: image.id,
+                size: targetSize,
+                format: variantFormat,
+              },
+            },
+          });
+          if (concurrentVariant) {
+            const url = getImagePublicUrl(concurrentVariant.options);
+            if (url) return url;
           }
         }
+        throw dbError;
       }
-      throw dbError;
-    }
 
-    return NextResponse.redirect(variantPublicUrl, { status: 302 });
+      return variantPublicUrl;
+    };
+
+    generationPromise = executeGeneration();
+    activeGenerations.set(generationKey, generationPromise);
+
+    try {
+      const variantPublicUrl = await generationPromise;
+      return NextResponse.redirect(variantPublicUrl, { status: 302 });
+    } finally {
+      activeGenerations.delete(generationKey);
+    }
   } catch (error) {
     logger.error({ route: "/api/v1/image/[slug]", method: "GET", error }, "Failed to process image variant");
     const message = error instanceof Error ? error.message : "Internal Server Error";
