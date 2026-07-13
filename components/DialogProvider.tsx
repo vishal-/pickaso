@@ -46,7 +46,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [value, setValue] = useState("");
   const [isClosing, setIsClosing] = useState(false);
 
-  const resolverRef = useRef<((result?: unknown) => void) | null>(null);
+  const resolverRef = useRef<((result?: any) => void) | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
   const close = useCallback(() => {

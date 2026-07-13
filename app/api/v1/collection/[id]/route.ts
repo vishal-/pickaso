@@ -3,6 +3,7 @@ import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { getSessionTenantId } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -172,59 +173,77 @@ export async function DELETE(
     logger.info({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Incoming collection delete request");
 
     const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: Invalid or missing authorization header");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    let collection: { id: string; name: string } | null = null;
 
-    const rawApiKey = authHeader.slice("Bearer ".length).trim();
-    if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
-      logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: Invalid API key format");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (authHeader?.startsWith("Bearer ")) {
+      const rawApiKey = authHeader.slice("Bearer ".length).trim();
+      if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
+        logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: Invalid API key format");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
 
-    const hashedKey = crypto.createHash("sha256").update(rawApiKey).digest("hex");
+      const hashedKey = crypto.createHash("sha256").update(rawApiKey).digest("hex");
 
-    const apiKey = await prisma.apiKey.findFirst({
-      where: { key: hashedKey },
-      include: {
-        app: {
-          select: {
-            id: true,
-            tenantId: true,
+      const apiKey = await prisma.apiKey.findFirst({
+        where: { key: hashedKey },
+        include: {
+          app: {
+            select: {
+              id: true,
+              tenantId: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!apiKey) {
-      logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: API key not found");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      if (!apiKey) {
+        logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: API key not found");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      const canDelete = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("DELETE");
+      if (!canDelete) {
+        logger.warn(
+          { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+          "Forbidden request: API key lacks required scope"
+        );
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      collection = await prisma.collection.findFirst({
+        where: {
+          id,
+          appId: apiKey.app.id,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+    } else {
+      // Fallback to session authentication
+      const tenantId = await getSessionTenantId();
+      if (!tenantId) {
+        logger.warn({ route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id }, "Unauthorized request: No session or auth header");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      // Verify collection belongs to app owned by tenant
+      collection = await prisma.collection.findFirst({
+        where: {
+          id,
+          app: { tenantId },
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
     }
-
-    const canDelete = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("DELETE");
-    if (!canDelete) {
-      logger.warn(
-        { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
-        "Forbidden request: API key lacks required scope"
-      );
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const collection = await prisma.collection.findFirst({
-      where: {
-        id,
-        appId: apiKey.app.id,
-      },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
 
     if (!collection) {
       logger.warn(
-        { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        { route: "/api/v1/collection/[id]", method: "DELETE", collectionId: id },
         "Collection not found for deletion"
       );
       return NextResponse.json({ error: "Collection not found" }, { status: 404 });
@@ -233,7 +252,6 @@ export async function DELETE(
     const images = await prisma.image.findMany({
       where: {
         collectionId: collection.id,
-        appId: apiKey.app.id,
       },
       select: {
         id: true,
@@ -276,8 +294,6 @@ export async function DELETE(
         method: "DELETE",
         collectionId: collection.id,
         collectionName: collection.name,
-        appId: apiKey.app.id,
-        tenantId: apiKey.app.tenantId,
         deletedImagesCount: images.length,
       },
       "Successfully deleted collection and its images"

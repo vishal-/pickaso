@@ -4,6 +4,7 @@ import { getAppById } from "@/lib/apps";
 import { getSessionTenantId } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { ApiKeyManager } from "@/components/ApiKeyManager";
+import { CollectionManager } from "@/components/CollectionManager";
 
 export default async function AppDetailPage({
   params,
@@ -60,6 +61,7 @@ export default async function AppDetailPage({
 
         <div className="space-y-6">
           <ApiKeyManager appId={id} initialKeys={apiKeys} />
+          <CollectionManager appId={id} />
         </div>
       </div>
     </div>
