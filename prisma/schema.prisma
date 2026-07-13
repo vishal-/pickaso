@@ -6,12 +6,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ==========================================
-// Tenant (Neon Auth User)
-// Maps directly to Neon's auth table
-// ==========================================
 model Tenant {
-  id            String    @id @db.Uuid
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  firebaseUid   String    @unique
   email         String    @unique
   emailVerified Boolean   @default(false)
   name          String?
@@ -40,15 +37,23 @@ model App {
   @@index([tenantId])
 }
 
+enum ApiKeyScope {
+  ALL
+  READ
+  WRITE
+  DELETE
+}
+
 model ApiKey {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  key         String   @unique
-  scopes      String[] @default(["all"])
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  key         String        @unique
+  scopes      ApiKeyScope[] @default([ALL])
 
-  createdAt   DateTime @default(now())
+  createdAt   DateTime      @default(now())
 
-  appId        String   @db.Uuid
-  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId        String        @db.Uuid
+  app          App           @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([appId])
 }
@@ -82,18 +87,7 @@ model Image {
   height        Int
   size          Int
 
-  // Upload/processing status
-  status        ImageStatus @default(PROCESSING)
-
-  // Flexible storage metadata
-  // Example:
-  // {
-  //   "original": {...},
-  //   "webp": {...},
-  //   "thumbnail": {...},
-  //   "medium": {...}
-  // }
-  variants      Json
+  options       Json
 
   // Ownership (denormalized for fast auth)
   tenantId      String   @db.Uuid
@@ -111,13 +105,5 @@ model Image {
   @@index([tenantId])
   @@index([appId])
   @@index([collectionId])
-  @@index([status])
   @@index([createdAt])
-}
-
-enum ImageStatus {
-  PROCESSING
-  READY
-  FAILED
-  DELETED
 }

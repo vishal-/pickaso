@@ -1,9 +1,10 @@
 -- CreateEnum
-CREATE TYPE "ImageStatus" AS ENUM ('PROCESSING', 'READY', 'FAILED', 'DELETED');
+CREATE TYPE "ApiKeyScope" AS ENUM ('ALL', 'READ', 'WRITE', 'DELETE');
 
 -- CreateTable
 CREATE TABLE "user" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "firebaseUid" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     "name" TEXT,
@@ -26,8 +27,9 @@ CREATE TABLE "App" (
 -- CreateTable
 CREATE TABLE "ApiKey" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "name" TEXT NOT NULL,
     "key" TEXT NOT NULL,
-    "scopes" TEXT[] DEFAULT ARRAY['all']::TEXT[],
+    "scopes" "ApiKeyScope"[] DEFAULT ARRAY['ALL']::"ApiKeyScope"[],
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "appId" UUID NOT NULL,
 
@@ -55,8 +57,7 @@ CREATE TABLE "Image" (
     "width" INTEGER NOT NULL,
     "height" INTEGER NOT NULL,
     "size" INTEGER NOT NULL,
-    "status" "ImageStatus" NOT NULL DEFAULT 'PROCESSING',
-    "variants" JSONB NOT NULL,
+    "options" JSONB NOT NULL,
     "tenantId" UUID NOT NULL,
     "appId" UUID NOT NULL,
     "collectionId" UUID NOT NULL,
@@ -65,6 +66,9 @@ CREATE TABLE "Image" (
 
     CONSTRAINT "Image_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_firebaseUid_key" ON "user"("firebaseUid");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "user_email_key" ON "user"("email");
@@ -92,9 +96,6 @@ CREATE INDEX "Image_appId_idx" ON "Image"("appId");
 
 -- CreateIndex
 CREATE INDEX "Image_collectionId_idx" ON "Image"("collectionId");
-
--- CreateIndex
-CREATE INDEX "Image_status_idx" ON "Image"("status");
 
 -- CreateIndex
 CREATE INDEX "Image_createdAt_idx" ON "Image"("createdAt");
