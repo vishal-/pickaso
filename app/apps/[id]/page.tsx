@@ -16,6 +16,15 @@ export default async function AppDetailPage({
     redirect("/login");
   }
 
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { approved: true },
+  });
+
+  if (!tenant || !tenant.approved) {
+    redirect("/dashboard");
+  }
+
   const { id } = await params;
   const app = await getAppById(id, tenantId);
 

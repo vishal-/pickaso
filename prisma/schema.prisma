@@ -11,6 +11,7 @@ model Tenant {
   firebaseUid   String    @unique
   email         String    @unique
   emailVerified Boolean   @default(false)
+  approved      Boolean   @default(false)
   name          String?
   createdAt     DateTime  @default(now())
 

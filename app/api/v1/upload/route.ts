@@ -113,6 +113,11 @@ export async function POST(request: Request) {
           select: {
             id: true,
             tenantId: true,
+            tenant: {
+              select: {
+                approved: true,
+              },
+            },
           },
         },
       },
@@ -121,6 +126,14 @@ export async function POST(request: Request) {
     if (!apiKey) {
       logger.warn({ route: "/api/v1/upload", method: "POST" }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!apiKey.app.tenant.approved) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: Tenant pending approval"
+      );
+      return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
     }
 
     const canUpload = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("WRITE");

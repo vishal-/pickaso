@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApps, createApp } from "@/lib/apps";
 import { getSessionTenantId } from "@/lib/session";
 import logger from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   logger.info({ route: "/api/apps", method: "GET" }, "Incoming apps list request");
@@ -10,6 +11,16 @@ export async function GET() {
     if (!tenantId) {
       logger.warn({ route: "/api/apps", method: "GET" }, "Unauthorized apps list request");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { approved: true },
+    });
+
+    if (!tenant || !tenant.approved) {
+      logger.warn({ route: "/api/apps", method: "GET", tenantId }, "Forbidden apps list request: Tenant pending approval");
+      return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
     }
 
     const apps = await getApps(tenantId);
@@ -35,6 +46,16 @@ export async function POST(request: Request) {
     if (!tenantId) {
       logger.warn({ route: "/api/apps", method: "POST" }, "Unauthorized app creation request");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { approved: true },
+    });
+
+    if (!tenant || !tenant.approved) {
+      logger.warn({ route: "/api/apps", method: "POST", tenantId }, "Forbidden app creation request: Tenant pending approval");
+      return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
     }
 
     const body = await request.json();

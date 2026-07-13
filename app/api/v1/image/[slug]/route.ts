@@ -370,6 +370,11 @@ export async function DELETE(
           select: {
             id: true,
             tenantId: true,
+            tenant: {
+              select: {
+                approved: true,
+              },
+            },
           },
         },
       },
@@ -378,6 +383,14 @@ export async function DELETE(
     if (!apiKey) {
       logger.warn({ route: "/api/v1/image/[slug]", method: "DELETE", imageId }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!apiKey.app.tenant.approved) {
+      logger.warn(
+        { route: "/api/v1/image/[slug]", method: "DELETE", imageId, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: Tenant pending approval"
+      );
+      return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
     }
 
     const canDelete = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("DELETE");

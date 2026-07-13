@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       "Auth sync completed"
     );
 
-    return NextResponse.json({ success: true, tenantId: tenant.id }, { status: 200 });
+    return NextResponse.json({ success: true, tenantId: tenant.id, approved: tenant.approved }, { status: 200 });
   } catch (error) {
     logger.error(
       { route: "/api/auth/sync", method: "POST", error },
