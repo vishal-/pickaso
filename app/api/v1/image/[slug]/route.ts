@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import logger from "@/lib/logger";
@@ -251,7 +251,7 @@ export async function GET(
 
       // Process image using sharp
       let sharpImg = sharp(originalBuffer);
-      
+
       if (targetSize !== "original") {
         const targetWidth = SIZE_MAP[targetSize];
         sharpImg = sharpImg.resize({ width: targetWidth, withoutEnlargement: true });
