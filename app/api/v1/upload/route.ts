@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
+import slugify from "@sindresorhus/slugify";
+import { customAlphabet } from "nanoid";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 
@@ -56,6 +58,25 @@ function createCuidLikeId(): string {
   const ts = Date.now().toString(36);
   const random = crypto.randomBytes(10).toString("hex");
   return `${ts}${random}`.slice(0, 24);
+}
+
+const NANOID_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+function generateSlug(originalName: string): string {
+  let baseName = originalName;
+  const lastDotIndex = originalName.lastIndexOf(".");
+  if (lastDotIndex !== -1) {
+    baseName = originalName.substring(0, lastDotIndex);
+  }
+
+  const slugified = slugify(baseName);
+  const cleanName = slugified.replace(/[-_]/g, "").slice(0, 12);
+
+  const nanoidLength = 24 - cleanName.length;
+  const generateNanoid = customAlphabet(NANOID_ALPHABET, nanoidLength);
+  const nanoidPart = generateNanoid();
+
+  return `${cleanName}${nanoidPart}`;
 }
 
 function getRequiredEnv(name: string): string {
@@ -208,8 +229,8 @@ export async function POST(request: Request) {
     const t_sharp = performance.now();
 
     const imageId = crypto.randomUUID();
-    const slug = `img_${createCuidLikeId()}`;
-    const objectName = `${imageId}.${outputSpec.extension}`;
+    const slug = generateSlug(imagePart.name || "image");
+    const objectName = `${slug}.${outputSpec.extension}`;
     const objectKey = `${apiKey.app.tenantId}/${objectName}`;
 
     const r2AccountId = getRequiredEnv("R2_ACCOUNT_ID");
