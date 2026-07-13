@@ -289,11 +289,12 @@ export async function GET(
       }
 
       const processedImg = encodeImage(sharpImg, variantFormat);
-      const variantBuffer = await processedImg.toBuffer();
-      const variantMetadata = await sharp(variantBuffer).metadata();
+      const { data: variantBuffer, info: variantInfo } = await processedImg.toBuffer({
+        resolveWithObject: true,
+      });
 
-      const width = variantMetadata.width || 0;
-      const height = variantMetadata.height || 0;
+      const width = variantInfo.width || 0;
+      const height = variantInfo.height || 0;
 
       // Upload variant back to R2
       const variantSlug = targetSize !== "original" ? `${image.slug}_${targetSize}` : image.slug;
