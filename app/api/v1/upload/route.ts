@@ -69,7 +69,7 @@ function generateSlug(originalName: string): string {
     baseName = originalName.substring(0, lastDotIndex);
   }
 
-  const slugified = slugify(baseName);
+  const slugified = slugify(baseName, { separator: "" });
   const cleanName = slugified.replace(/[-_]/g, "").slice(0, 12);
 
   const nanoidLength = 24 - cleanName.length;
