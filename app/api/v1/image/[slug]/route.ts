@@ -40,7 +40,7 @@ function getImagePublicUrl(options: unknown): string | null {
 
   const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
   if (!r2PublicBaseUrl) {
-    return null;
+    throw new Error("R2_PUBLIC_BASE_URL is not configured");
   }
 
   const trimmedBase = r2PublicBaseUrl.replace(/\/+$/, "");
