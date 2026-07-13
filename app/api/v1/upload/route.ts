@@ -1,11 +1,12 @@
 import crypto from "crypto";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import slugify from "@sindresorhus/slugify";
 import { customAlphabet } from "nanoid";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { getR2Client, getRequiredEnv } from "@/lib/r2";
 
 export const runtime = "nodejs";
 
@@ -79,13 +80,6 @@ function generateSlug(originalName: string): string {
   return `${cleanName}${nanoidPart}`;
 }
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
 
 function toPublicUrl(baseUrl: string, objectPath: string): string {
   const trimmedBase = baseUrl.replace(/\/+$/, "");
@@ -235,14 +229,11 @@ export async function POST(request: Request) {
     const r2Bucket = getRequiredEnv("R2_BUCKET");
     const r2PublicBaseUrl = getRequiredEnv("R2_PUBLIC_BASE_URL");
 
-    const r2Client = new S3Client({
-      region: "auto",
-      endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: r2AccessKeyId,
-        secretAccessKey: r2SecretAccessKey,
-      },
-    });
+    const r2Client = getR2Client();
+    if (!r2Client) {
+      logger.error("R2 client configuration is incomplete");
+      return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
 
     await r2Client.send(
       new PutObjectCommand({

@@ -1,9 +1,10 @@
 import crypto from "crypto";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { getR2Client, getOptionalEnv, deleteR2ObjectIfPossible } from "@/lib/r2";
 
 export const runtime = "nodejs";
 
@@ -17,9 +18,6 @@ const SIZE_MAP: Record<string, number> = {
 
 const activeGenerations = new Map<string, Promise<string>>();
 
-function getOptionalEnv(name: string): string | null {
-  return process.env[name] ?? null;
-}
 
 function getImageObjectKey(options: unknown): string | null {
   if (!options || typeof options !== "object") {
@@ -96,32 +94,7 @@ function toPublicUrl(baseUrl: string, objectPath: string): string {
   return `${trimmedBase}/${trimmedPath}`;
 }
 
-async function deleteR2ObjectIfPossible(objectKey: string): Promise<void> {
-  const r2AccountId = getOptionalEnv("R2_ACCOUNT_ID");
-  const r2AccessKeyId = getOptionalEnv("R2_ACCESS_KEY_ID");
-  const r2SecretAccessKey = getOptionalEnv("R2_SECRET_ACCESS_KEY");
-  const r2Bucket = getOptionalEnv("R2_BUCKET");
 
-  if (!r2AccountId || !r2AccessKeyId || !r2SecretAccessKey || !r2Bucket) {
-    return;
-  }
-
-  const r2Client = new S3Client({
-    region: "auto",
-    endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: r2AccessKeyId,
-      secretAccessKey: r2SecretAccessKey,
-    },
-  });
-
-  await r2Client.send(
-    new DeleteObjectCommand({
-      Bucket: r2Bucket,
-      Key: objectKey,
-    })
-  );
-}
 
 export async function GET(
   request: Request,
@@ -252,14 +225,10 @@ export async function GET(
         if (url) return url;
       }
 
-      const r2Client = new S3Client({
-        region: "auto",
-        endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
-        credentials: {
-          accessKeyId: r2AccessKeyId,
-          secretAccessKey: r2SecretAccessKey,
-        },
-      });
+      const r2Client = getR2Client();
+      if (!r2Client) {
+        throw new Error("R2 configuration is incomplete");
+      }
 
       const originalKey = (image.options as any).key;
       if (!originalKey) {

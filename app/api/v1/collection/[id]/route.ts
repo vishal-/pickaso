@@ -1,15 +1,13 @@
 import crypto from "crypto";
-import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getSessionTenantId } from "@/lib/session";
+import { deleteR2ObjectIfPossible } from "@/lib/r2";
 
 export const runtime = "nodejs";
 
-function getOptionalEnv(name: string): string | null {
-  return process.env[name] ?? null;
-}
 
 function getImageObjectKey(options: unknown): string | null {
   if (!options || typeof options !== "object") {
@@ -40,32 +38,7 @@ function getImagePublicUrl(options: unknown): string | null {
   return `${trimmedBase}/${trimmedPath}`;
 }
 
-async function deleteR2ObjectIfPossible(objectKey: string): Promise<void> {
-  const r2AccountId = getOptionalEnv("R2_ACCOUNT_ID");
-  const r2AccessKeyId = getOptionalEnv("R2_ACCESS_KEY_ID");
-  const r2SecretAccessKey = getOptionalEnv("R2_SECRET_ACCESS_KEY");
-  const r2Bucket = getOptionalEnv("R2_BUCKET");
 
-  if (!r2AccountId || !r2AccessKeyId || !r2SecretAccessKey || !r2Bucket) {
-    return;
-  }
-
-  const r2Client = new S3Client({
-    region: "auto",
-    endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: r2AccessKeyId,
-      secretAccessKey: r2SecretAccessKey,
-    },
-  });
-
-  await r2Client.send(
-    new DeleteObjectCommand({
-      Bucket: r2Bucket,
-      Key: objectKey,
-    })
-  );
-}
 
 export async function GET(
   request: Request,
