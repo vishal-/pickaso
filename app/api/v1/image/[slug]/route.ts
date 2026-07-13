@@ -19,6 +19,15 @@ function getImageObjectKey(options: unknown): string | null {
   return typeof key === "string" && key.length > 0 ? key : null;
 }
 
+function getImagePublicUrl(options: unknown): string | null {
+  if (!options || typeof options !== "object") {
+    return null;
+  }
+
+  const url = (options as { url?: unknown }).url;
+  return typeof url === "string" && url.length > 0 ? url : null;
+}
+
 async function deleteR2ObjectIfPossible(objectKey: string): Promise<void> {
   const r2AccountId = getOptionalEnv("R2_ACCOUNT_ID");
   const r2AccessKeyId = getOptionalEnv("R2_ACCESS_KEY_ID");
@@ -46,24 +55,72 @@ async function deleteR2ObjectIfPossible(objectKey: string): Promise<void> {
   );
 }
 
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug: slugParam } = await params;
+    logger.info({ route: "/api/v1/image/[slug]", method: "GET", slugParam }, "Incoming image slug redirect request");
+
+    const lastDotIndex = slugParam.lastIndexOf(".");
+    if (lastDotIndex === -1) {
+      logger.warn({ route: "/api/v1/image/[slug]", method: "GET", slugParam }, "Image request missing file extension");
+      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+    }
+
+    const slug = slugParam.substring(0, lastDotIndex);
+    const ext = slugParam.substring(lastDotIndex + 1).toLowerCase();
+
+    const image = await prisma.image.findFirst({
+      where: {
+        slug,
+        format: ext,
+      },
+      select: {
+        options: true,
+      },
+    });
+
+    if (!image) {
+      logger.warn({ route: "/api/v1/image/[slug]", method: "GET", slug, ext }, "Image not found in database");
+      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+    }
+
+    const publicUrl = getImagePublicUrl(image.options);
+    if (!publicUrl) {
+      logger.error({ route: "/api/v1/image/[slug]", method: "GET", slug, ext }, "Image option URL missing");
+      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+    }
+
+    logger.info({ route: "/api/v1/image/[slug]", method: "GET", slug, ext }, "Redirecting to R2 URL");
+    return NextResponse.redirect(publicUrl, { status: 302 });
+  } catch (error) {
+    logger.error({ route: "/api/v1/image/[slug]", method: "GET", error }, "Failed to get image");
+    const message = error instanceof Error ? error.message : "Internal Server Error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
-  let id: string | undefined;
+  let imageId: string | undefined;
   try {
-    ({ id } = await params);
-    logger.info({ route: "/api/v1/image/[id]", method: "DELETE", imageId: id }, "Incoming image delete request");
+    const { slug } = await params;
+    imageId = slug;
+    logger.info({ route: "/api/v1/image/[slug]", method: "DELETE", imageId }, "Incoming image delete request");
 
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      logger.warn({ route: "/api/v1/image/[id]", method: "DELETE", imageId: id }, "Unauthorized request: Invalid or missing authorization header");
+      logger.warn({ route: "/api/v1/image/[slug]", method: "DELETE", imageId }, "Unauthorized request: Invalid or missing authorization header");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const rawApiKey = authHeader.slice("Bearer ".length).trim();
     if (!rawApiKey || !rawApiKey.startsWith("pk_")) {
-      logger.warn({ route: "/api/v1/image/[id]", method: "DELETE", imageId: id }, "Unauthorized request: Invalid API key format");
+      logger.warn({ route: "/api/v1/image/[slug]", method: "DELETE", imageId }, "Unauthorized request: Invalid API key format");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -82,14 +139,14 @@ export async function DELETE(
     });
 
     if (!apiKey) {
-      logger.warn({ route: "/api/v1/image/[id]", method: "DELETE", imageId: id }, "Unauthorized request: API key not found");
+      logger.warn({ route: "/api/v1/image/[slug]", method: "DELETE", imageId }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const canDelete = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("DELETE");
     if (!canDelete) {
       logger.warn(
-        { route: "/api/v1/image/[id]", method: "DELETE", imageId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        { route: "/api/v1/image/[slug]", method: "DELETE", imageId, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
         "Forbidden request: API key lacks required scope"
       );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -97,7 +154,7 @@ export async function DELETE(
 
     const image = await prisma.image.findFirst({
       where: {
-        id,
+        id: imageId,
         appId: apiKey.app.id,
       },
       select: {
@@ -109,7 +166,7 @@ export async function DELETE(
 
     if (!image) {
       logger.warn(
-        { route: "/api/v1/image/[id]", method: "DELETE", imageId: id, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        { route: "/api/v1/image/[slug]", method: "DELETE", imageId, appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
         "Image not found for deletion"
       );
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
@@ -122,7 +179,7 @@ export async function DELETE(
       } catch (error) {
         logger.warn(
           {
-            route: "/api/v1/image/[id]",
+            route: "/api/v1/image/[slug]",
             method: "DELETE",
             imageId: image.id,
             objectKey,
@@ -141,7 +198,7 @@ export async function DELETE(
 
     logger.info(
       {
-        route: "/api/v1/image/[id]",
+        route: "/api/v1/image/[slug]",
         method: "DELETE",
         imageId: image.id,
         slug: image.slug,
@@ -160,7 +217,7 @@ export async function DELETE(
       { status: 200 }
     );
   } catch (error) {
-    logger.error({ route: "/api/v1/image/[id]", method: "DELETE", imageId: id, error }, "Failed to delete image");
+    logger.error({ route: "/api/v1/image/[slug]", method: "DELETE", imageId, error }, "Failed to delete image");
     const message = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
