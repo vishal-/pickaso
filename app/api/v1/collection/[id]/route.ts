@@ -25,8 +25,19 @@ function getImagePublicUrl(options: unknown): string | null {
     return null;
   }
 
-  const url = (options as { url?: unknown }).url;
-  return typeof url === "string" && url.length > 0 ? url : null;
+  const key = (options as { key?: unknown }).key;
+  if (typeof key !== "string" || key.length === 0) {
+    return null;
+  }
+
+  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
+  if (!r2PublicBaseUrl) {
+    return null;
+  }
+
+  const trimmedBase = r2PublicBaseUrl.replace(/\/+$/, "");
+  const trimmedPath = key.replace(/^\/+/, "");
+  return `${trimmedBase}/${trimmedPath}`;
 }
 
 async function deleteR2ObjectIfPossible(objectKey: string): Promise<void> {

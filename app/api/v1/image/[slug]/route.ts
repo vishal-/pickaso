@@ -33,8 +33,19 @@ function getImagePublicUrl(options: unknown): string | null {
     return null;
   }
 
-  const url = (options as { url?: unknown }).url;
-  return typeof url === "string" && url.length > 0 ? url : null;
+  const key = (options as { key?: unknown }).key;
+  if (typeof key !== "string" || key.length === 0) {
+    return null;
+  }
+
+  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
+  if (!r2PublicBaseUrl) {
+    return null;
+  }
+
+  const trimmedBase = r2PublicBaseUrl.replace(/\/+$/, "");
+  const trimmedPath = key.replace(/^\/+/, "");
+  return `${trimmedBase}/${trimmedPath}`;
 }
 
 function getMimeType(format: string): string {
@@ -136,26 +147,8 @@ export async function GET(
     const slug = slugParam.substring(0, lastDotIndex);
     const ext = slugParam.substring(lastDotIndex + 1).toLowerCase();
 
-    // 2. Fetch original image
-    const image = await prisma.image.findFirst({
-      where: {
-        slug,
-        format: ext,
-      },
-    });
-
-    if (!image) {
-      logger.warn({ route: "/api/v1/image/[slug]", method: "GET", slug, ext }, "Original image not found");
-      return NextResponse.json({ error: "Image not found" }, { status: 404 });
-    }
-
-    const originalUrl = getImagePublicUrl(image.options);
-    if (!originalUrl) {
-      return NextResponse.json({ error: "Original image URL missing" }, { status: 404 });
-    }
-
-    // 3. Check query parameters
-    const targetFormat = rawFmt ? rawFmt.toLowerCase() : image.format;
+    // 2. Determine target options
+    const targetFormat = rawFmt ? rawFmt.toLowerCase() : ext;
     const targetSize = rawSize ? rawSize.toLowerCase() : "original";
 
     // Validate parameters
@@ -166,37 +159,51 @@ export async function GET(
       return NextResponse.json({ error: "Unsupported size requested" }, { status: 400 });
     }
 
-    // If target format and size equal original, just redirect to original url
-    const isOriginalFormat = getNormalizedFormat(targetFormat) === getNormalizedFormat(image.format);
+    const variantFormat = getNormalizedFormat(targetFormat);
+    const isOriginalFormat = variantFormat === getNormalizedFormat(ext);
     const isOriginalSize = targetSize === "original";
 
-    if (isOriginalFormat && isOriginalSize) {
-      logger.info({ route: "/api/v1/image/[slug]", method: "GET", slug }, "Serving original image");
-      return NextResponse.redirect(originalUrl, { status: 302 });
-    }
-
-    // 4. Check if variant already exists
-    const variantFormat = getNormalizedFormat(targetFormat);
-    const existingVariant = await prisma.imageVariant.findUnique({
+    // 3. Single-query original image + target variant
+    const image = await prisma.image.findFirst({
       where: {
-        imageId_size_format: {
-          imageId: image.id,
-          size: targetSize,
-          format: variantFormat,
+        slug,
+        format: ext,
+      },
+      include: {
+        variants: {
+          where: {
+            size: targetSize,
+            format: variantFormat,
+          },
         },
       },
     });
 
-    if (existingVariant) {
-      const variantUrl = getImagePublicUrl(existingVariant.options);
+    if (!image) {
+      logger.warn({ route: "/api/v1/image/[slug]", method: "GET", slug, ext }, "Original image not found");
+      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+    }
+
+    // 4. Redirect if original is requested or variant matches original spec
+    if (isOriginalFormat && isOriginalSize) {
+      const originalUrl = getImagePublicUrl(image.options);
+      if (!originalUrl) {
+        return NextResponse.json({ error: "Original image URL missing" }, { status: 404 });
+      }
+      logger.info({ route: "/api/v1/image/[slug]", method: "GET", slug }, "Serving original image");
+      return NextResponse.redirect(originalUrl, { status: 302 });
+    }
+
+    // 5. Redirect if cached variant already exists
+    if (image.variants.length > 0) {
+      const variantUrl = getImagePublicUrl(image.variants[0].options);
       if (variantUrl) {
         logger.info({ route: "/api/v1/image/[slug]", method: "GET", slug, targetSize, variantFormat }, "Serving existing variant");
         return NextResponse.redirect(variantUrl, { status: 302 });
       }
     }
 
-    // 5. Generate variant:
-    // Download original from R2
+    // 6. Generate variant (Cache miss)
     const r2AccountId = getOptionalEnv("R2_ACCOUNT_ID");
     const r2AccessKeyId = getOptionalEnv("R2_ACCESS_KEY_ID");
     const r2SecretAccessKey = getOptionalEnv("R2_SECRET_ACCESS_KEY");
@@ -240,13 +247,11 @@ export async function GET(
     // Process image using sharp
     let sharpImg = sharp(originalBuffer);
     
-    // Resize if target size is not original
     if (targetSize !== "original") {
       const targetWidth = SIZE_MAP[targetSize];
       sharpImg = sharpImg.resize({ width: targetWidth, withoutEnlargement: true });
     }
 
-    // Convert format and compile to buffer
     const processedImg = encodeImage(sharpImg, variantFormat);
     const variantBuffer = await processedImg.toBuffer();
     const variantMetadata = await sharp(variantBuffer).metadata();
@@ -271,7 +276,7 @@ export async function GET(
 
     const variantPublicUrl = toPublicUrl(r2PublicBaseUrl, variantObjectKey);
 
-    // Save variant to Database
+    // Save variant to Database (without storing url)
     try {
       await prisma.imageVariant.create({
         data: {
@@ -285,13 +290,11 @@ export async function GET(
           options: {
             bucket: r2Bucket,
             key: variantObjectKey,
-            url: variantPublicUrl,
           },
         },
       });
       logger.info({ variantSlug, format: variantFormat, size: targetSize }, "Successfully created image variant in DB");
     } catch (dbError: any) {
-      // Gracefully handle concurrent write conflicts
       if (dbError.code === "P2002") {
         const concurrentVariant = await prisma.imageVariant.findUnique({
           where: {

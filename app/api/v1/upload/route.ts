@@ -268,7 +268,6 @@ export async function POST(request: Request) {
         options: {
           bucket: r2Bucket,
           key: objectKey,
-          url: publicUrl,
         },
         tenantId: apiKey.app.tenantId,
         appId: apiKey.app.id,
