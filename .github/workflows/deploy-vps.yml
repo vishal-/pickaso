@@ -34,10 +34,9 @@ jobs:
       - name: Create deployment bundle
         run: |
           mkdir -p deploy
-          mkdir -p deploy/.next
 
           cp -r .next/standalone/* deploy/
-          cp -r .next/static deploy/.next/
+          cp -r .next deploy/
           cp -r public deploy/ || true
           cp -r prisma deploy/
 
