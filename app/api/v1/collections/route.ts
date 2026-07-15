@@ -29,6 +29,11 @@ export async function GET(request: Request) {
             select: {
               id: true,
               tenantId: true,
+              tenant: {
+                select: {
+                  approved: true,
+                },
+              },
             },
           },
         },
@@ -37,6 +42,14 @@ export async function GET(request: Request) {
       if (!apiKey) {
         logger.warn({ route: "/api/v1/collections", method: "GET" }, "Unauthorized request: API key not found");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      if (!apiKey.app.tenant.approved) {
+        logger.warn(
+          { route: "/api/v1/collections", method: "GET", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+          "Forbidden request: Tenant pending approval"
+        );
+        return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
       }
 
       const canRead = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("READ");
@@ -55,6 +68,16 @@ export async function GET(request: Request) {
       if (!tenantId) {
         logger.warn({ route: "/api/v1/collections", method: "GET" }, "Unauthorized request: No session or auth header");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { approved: true },
+      });
+
+      if (!tenant || !tenant.approved) {
+        logger.warn({ route: "/api/v1/collections", method: "GET", tenantId }, "Forbidden session request: Tenant pending approval");
+        return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
       }
 
       const { searchParams } = new URL(request.url);

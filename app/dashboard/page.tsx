@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { PendingApproval } from "@/components/PendingApproval";
 
 const stats = [
   { label: "Total Assets", value: "0", icon: "🖼️", change: "—" },
@@ -41,7 +42,7 @@ const quickActions = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, loading, approved, logout } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -65,6 +66,10 @@ export default function DashboardPage() {
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
       </div>
     );
+  }
+
+  if (!approved) {
+    return <PendingApproval />;
   }
   return (
     <div className="min-h-screen flex flex-col">

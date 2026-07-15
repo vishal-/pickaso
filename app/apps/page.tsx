@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import type { AppRecord } from "@/lib/apps";
 import { useAuth } from "@/components/AuthProvider";
+import { PendingApproval } from "@/components/PendingApproval";
 
 export default function AppsPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, approved } = useAuth();
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +25,7 @@ export default function AppsPage() {
 
   useEffect(() => {
     let active = true;
-    if (user) {
+    if (user && approved) {
       const fetchApps = async () => {
         try {
           const res = await fetch("/api/apps");
@@ -39,13 +40,15 @@ export default function AppsPage() {
         }
       };
       fetchApps();
-    } else if (!authLoading) {
-      setAppsLoading(false);
+    } else if (!authLoading || (user && !approved)) {
+      Promise.resolve().then(() => {
+        if (active) setAppsLoading(false);
+      });
     }
     return () => {
       active = false;
     };
-  }, [user, authLoading]);
+  }, [user, authLoading, approved]);
 
   async function handleCreateApp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,6 +89,10 @@ export default function AppsPage() {
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
       </div>
     );
+  }
+
+  if (!approved) {
+    return <PendingApproval />;
   }
 
   return (

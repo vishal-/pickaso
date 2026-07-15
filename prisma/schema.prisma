@@ -11,6 +11,7 @@ model Tenant {
   firebaseUid   String    @unique
   email         String    @unique
   emailVerified Boolean   @default(false)
+  approved      Boolean   @default(false)
   name          String?
   createdAt     DateTime  @default(now())
 
@@ -102,8 +103,31 @@ model Image {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  variants      ImageVariant[]
+
   @@index([tenantId])
   @@index([appId])
   @@index([collectionId])
   @@index([createdAt])
+}
+
+model ImageVariant {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  imageId       String   @db.Uuid
+  image         Image    @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  slug          String
+  format        String
+  size          String
+
+  width         Int
+  height        Int
+  fileSize      Int
+  options       Json
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([imageId, size, format])
+  @@index([imageId])
 }

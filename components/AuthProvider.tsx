@@ -7,27 +7,29 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  approved: boolean;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  approved: false,
   logout: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [approved, setApproved] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
-      setLoading(false);
 
       if (firebaseUser) {
         try {
-          await fetch("/api/auth/sync", {
+          const res = await fetch("/api/auth/sync", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -39,10 +41,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               emailVerified: firebaseUser.emailVerified,
             }),
           });
+          if (res.ok) {
+            const data = await res.json();
+            setApproved(!!data.approved);
+          }
         } catch (error) {
           console.error("Failed to sync authenticated user to database:", error);
         }
+      } else {
+        setApproved(false);
       }
+      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -52,13 +61,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       await signOut(auth);
+      setApproved(false);
     } catch (error) {
       console.error("Failed to clean up session on logout:", error);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, approved, logout }}>
       {children}
     </AuthContext.Provider>
   );

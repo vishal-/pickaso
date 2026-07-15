@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useDialog } from "@/components/DialogProvider";
 
 type CollectionData = {
@@ -22,7 +22,7 @@ export function CollectionManager({ appId }: CollectionManagerProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchCollections = async (pageNumber: number) => {
+  const fetchCollections = useCallback(async (pageNumber: number) => {
     setLoading(true);
     setError(null);
     try {
@@ -39,11 +39,19 @@ export function CollectionManager({ appId }: CollectionManagerProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [appId]);
 
   useEffect(() => {
-    fetchCollections(1);
-  }, [appId]);
+    let active = true;
+    Promise.resolve().then(() => {
+      if (active) {
+        fetchCollections(1);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [fetchCollections]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {

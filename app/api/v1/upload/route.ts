@@ -1,15 +1,37 @@
 import crypto from "crypto";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import slugify from "@sindresorhus/slugify";
 import { customAlphabet } from "nanoid";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { getR2Client, getRequiredEnv } from "@/lib/r2";
 
 export const runtime = "nodejs";
 
 const COLLECTION_NAME_PATTERN = /^[a-z0-9]+$/;
+
+interface ApiKeyData {
+  scopes: string[];
+  app: {
+    id: string;
+    tenantId: string;
+    tenant: {
+      approved: boolean;
+    };
+  };
+}
+
+type CachedApiKey = {
+  data: ApiKeyData;
+  timestamp: number;
+};
+
+const apiKeyCache = new Map<string, CachedApiKey>();
+const collectionCache = new Map<string, string>();
+const API_KEY_CACHE_TTL_MS = 60 * 1000; // 1 minute TTL
+
 
 type OutputSpec = {
   extension: string;
@@ -54,11 +76,7 @@ function getOutputSpec(format: string | undefined): OutputSpec | null {
   }
 }
 
-function createCuidLikeId(): string {
-  const ts = Date.now().toString(36);
-  const random = crypto.randomBytes(10).toString("hex");
-  return `${ts}${random}`.slice(0, 24);
-}
+
 
 const NANOID_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -79,13 +97,6 @@ function generateSlug(originalName: string): string {
   return `${cleanName}${nanoidPart}`;
 }
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
 
 function toPublicUrl(baseUrl: string, objectPath: string): string {
   const trimmedBase = baseUrl.replace(/\/+$/, "");
@@ -112,21 +123,47 @@ export async function POST(request: Request) {
 
     const hashedKey = crypto.createHash("sha256").update(rawApiKey).digest("hex");
 
-    const apiKey = await prisma.apiKey.findFirst({
-      where: { key: hashedKey },
-      include: {
-        app: {
-          select: {
-            id: true,
-            tenantId: true,
+    let apiKey: ApiKeyData | null = null;
+    const cachedKeyData = apiKeyCache.get(hashedKey);
+    if (cachedKeyData && Date.now() - cachedKeyData.timestamp < API_KEY_CACHE_TTL_MS) {
+      apiKey = cachedKeyData.data;
+    } else {
+      apiKey = await prisma.apiKey.findFirst({
+        where: { key: hashedKey },
+        include: {
+          app: {
+            select: {
+              id: true,
+              tenantId: true,
+              tenant: {
+                select: {
+                  approved: true,
+                },
+              },
+            },
           },
         },
-      },
-    });
+      });
+
+      if (apiKey) {
+        apiKeyCache.set(hashedKey, {
+          data: apiKey,
+          timestamp: Date.now(),
+        });
+      }
+    }
 
     if (!apiKey) {
       logger.warn({ route: "/api/v1/upload", method: "POST" }, "Unauthorized request: API key not found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!apiKey.app.tenant.approved) {
+      logger.warn(
+        { route: "/api/v1/upload", method: "POST", appId: apiKey.app.id, tenantId: apiKey.app.tenantId },
+        "Forbidden request: Tenant pending approval"
+      );
+      return NextResponse.json({ error: "Your account is pending administrator approval." }, { status: 403 });
     }
 
     const canUpload = apiKey.scopes.includes("ALL") || apiKey.scopes.includes("WRITE");
@@ -173,20 +210,33 @@ export async function POST(request: Request) {
       );
     }
 
-    let collection = await prisma.collection.findFirst({
-      where: {
-        appId: apiKey.app.id,
-        name: requestedCollection,
-      },
-    });
+    const cacheKey = `${apiKey.app.id}:${requestedCollection}`;
+    const collectionId = collectionCache.get(cacheKey);
+    let collection: { id: string; name: string } | null = null;
 
-    if (!collection) {
-      collection = await prisma.collection.create({
-        data: {
-          name: requestedCollection,
+    if (collectionId) {
+      collection = { id: collectionId, name: requestedCollection };
+    } else {
+      const dbCollection = await prisma.collection.findFirst({
+        where: {
           appId: apiKey.app.id,
+          name: requestedCollection,
         },
       });
+
+      if (dbCollection) {
+        collection = dbCollection;
+        collectionCache.set(cacheKey, dbCollection.id);
+      } else {
+        const newCollection = await prisma.collection.create({
+          data: {
+            name: requestedCollection,
+            appId: apiKey.app.id,
+          },
+        });
+        collection = newCollection;
+        collectionCache.set(cacheKey, newCollection.id);
+      }
     }
 
     const inputBuffer = Buffer.from(await imagePart.arrayBuffer());
@@ -221,28 +271,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid image dimensions" }, { status: 400 });
     }
 
-    // Re-encoding strips EXIF and other metadata while preserving image format.
-    const outputBuffer = await outputSpec.encode(sourceImage).toBuffer();
+    // Bypass re-encoding on upload to store original file unmodified and avoid CPU latency
+    const outputBuffer = inputBuffer;
 
     const imageId = crypto.randomUUID();
     const slug = generateSlug(imagePart.name || "image");
     const objectName = `${slug}.${outputSpec.extension}`;
     const objectKey = objectName;
 
-    const r2AccountId = getRequiredEnv("R2_ACCOUNT_ID");
-    const r2AccessKeyId = getRequiredEnv("R2_ACCESS_KEY_ID");
-    const r2SecretAccessKey = getRequiredEnv("R2_SECRET_ACCESS_KEY");
+    getRequiredEnv("R2_ACCOUNT_ID");
+    getRequiredEnv("R2_ACCESS_KEY_ID");
+    getRequiredEnv("R2_SECRET_ACCESS_KEY");
     const r2Bucket = getRequiredEnv("R2_BUCKET");
     const r2PublicBaseUrl = getRequiredEnv("R2_PUBLIC_BASE_URL");
 
-    const r2Client = new S3Client({
-      region: "auto",
-      endpoint: `https://${r2AccountId}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: r2AccessKeyId,
-        secretAccessKey: r2SecretAccessKey,
-      },
-    });
+    const r2Client = getR2Client();
+    if (!r2Client) {
+      logger.error("R2 client configuration is incomplete");
+      return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
 
     await r2Client.send(
       new PutObjectCommand({
@@ -268,7 +315,6 @@ export async function POST(request: Request) {
         options: {
           bucket: r2Bucket,
           key: objectKey,
-          url: publicUrl,
         },
         tenantId: apiKey.app.tenantId,
         appId: apiKey.app.id,

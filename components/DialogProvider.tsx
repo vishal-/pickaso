@@ -46,7 +46,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [value, setValue] = useState("");
   const [isClosing, setIsClosing] = useState(false);
 
-  const resolverRef = useRef<((result?: any) => void) | null>(null);
+  const resolverRef = useRef<((result?: boolean | string | null | void) => void) | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
   const close = useCallback(() => {
@@ -68,7 +68,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 
   const alert = useCallback((message: string, title?: string) => {
     return new Promise<void>((resolve) => {
-      resolverRef.current = resolve;
+      resolverRef.current = resolve as unknown as (result?: boolean | string | null | void) => void;
       setIsClosing(false);
       setDialog({
         open: true,
@@ -81,7 +81,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 
   const confirm = useCallback((message: string, title?: string) => {
     return new Promise<boolean>((resolve) => {
-      resolverRef.current = resolve;
+      resolverRef.current = resolve as unknown as (result?: boolean | string | null | void) => void;
       setIsClosing(false);
       setDialog({
         open: true,
@@ -94,7 +94,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 
   const prompt = useCallback((message: string, defaultValue = "", title?: string) => {
     return new Promise<string | null>((resolve) => {
-      resolverRef.current = resolve;
+      resolverRef.current = resolve as unknown as (result?: boolean | string | null | void) => void;
       setValue(defaultValue);
       setIsClosing(false);
       setDialog({
