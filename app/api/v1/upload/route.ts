@@ -12,6 +12,16 @@ export const runtime = "nodejs";
 
 const COLLECTION_NAME_PATTERN = /^[a-z0-9]+$/;
 
+type CachedApiKey = {
+  data: any;
+  timestamp: number;
+};
+
+const apiKeyCache = new Map<string, CachedApiKey>();
+const collectionCache = new Map<string, string>();
+const API_KEY_CACHE_TTL_MS = 60 * 1000; // 1 minute TTL
+
+
 type OutputSpec = {
   extension: string;
   mimeType: string;
@@ -106,22 +116,35 @@ export async function POST(request: Request) {
 
     const hashedKey = crypto.createHash("sha256").update(rawApiKey).digest("hex");
 
-    const apiKey = await prisma.apiKey.findFirst({
-      where: { key: hashedKey },
-      include: {
-        app: {
-          select: {
-            id: true,
-            tenantId: true,
-            tenant: {
-              select: {
-                approved: true,
+    let apiKey: any = null;
+    const cachedKeyData = apiKeyCache.get(hashedKey);
+    if (cachedKeyData && Date.now() - cachedKeyData.timestamp < API_KEY_CACHE_TTL_MS) {
+      apiKey = cachedKeyData.data;
+    } else {
+      apiKey = await prisma.apiKey.findFirst({
+        where: { key: hashedKey },
+        include: {
+          app: {
+            select: {
+              id: true,
+              tenantId: true,
+              tenant: {
+                select: {
+                  approved: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+
+      if (apiKey) {
+        apiKeyCache.set(hashedKey, {
+          data: apiKey,
+          timestamp: Date.now(),
+        });
+      }
+    }
 
     if (!apiKey) {
       logger.warn({ route: "/api/v1/upload", method: "POST" }, "Unauthorized request: API key not found");
@@ -180,20 +203,33 @@ export async function POST(request: Request) {
       );
     }
 
-    let collection = await prisma.collection.findFirst({
-      where: {
-        appId: apiKey.app.id,
-        name: requestedCollection,
-      },
-    });
+    const cacheKey = `${apiKey.app.id}:${requestedCollection}`;
+    let collectionId = collectionCache.get(cacheKey);
+    let collection: { id: string; name: string } | null = null;
 
-    if (!collection) {
-      collection = await prisma.collection.create({
-        data: {
-          name: requestedCollection,
+    if (collectionId) {
+      collection = { id: collectionId, name: requestedCollection };
+    } else {
+      const dbCollection = await prisma.collection.findFirst({
+        where: {
           appId: apiKey.app.id,
+          name: requestedCollection,
         },
       });
+
+      if (dbCollection) {
+        collection = dbCollection;
+        collectionCache.set(cacheKey, dbCollection.id);
+      } else {
+        const newCollection = await prisma.collection.create({
+          data: {
+            name: requestedCollection,
+            appId: apiKey.app.id,
+          },
+        });
+        collection = newCollection;
+        collectionCache.set(cacheKey, newCollection.id);
+      }
     }
 
     const inputBuffer = Buffer.from(await imagePart.arrayBuffer());
@@ -228,8 +264,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid image dimensions" }, { status: 400 });
     }
 
-    // Re-encoding strips EXIF and other metadata while preserving image format.
-    const outputBuffer = await outputSpec.encode(sourceImage).toBuffer();
+    // Bypass re-encoding on upload to store original file unmodified and avoid CPU latency
+    const outputBuffer = inputBuffer;
 
     const imageId = crypto.randomUUID();
     const slug = generateSlug(imagePart.name || "image");
