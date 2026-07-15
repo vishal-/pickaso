@@ -11,16 +11,39 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy over SSH
     runs-on: ubuntu-latest
     environment: production
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup SSH key
-        shell: bash
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Create deployment bundle
+        run: |
+          mkdir deploy
+
+          cp -r .next/standalone/* deploy/
+          cp -r .next/static deploy/.next/
+          cp -r public deploy/ || true
+          cp -r prisma deploy/
+
+          # package.json is useful if you ever need it
+          cp package.json deploy/
+
+      - name: Setup SSH
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
@@ -29,16 +52,25 @@ jobs:
           echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-      - name: Trust VPS host key
-        shell: bash
+      - name: Trust VPS
         env:
           HOST: ${{ secrets.HOST }}
           PORT: ${{ secrets.PORT || '22' }}
         run: |
           ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts
 
-      - name: Deploy on VPS
-        shell: bash
+      - name: Upload files
+        env:
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          PORT: ${{ secrets.PORT || '22' }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -p $PORT" \
+            deploy/ \
+            "$USER@$HOST:/opt/apps/pickaso/"
+
+      - name: Deploy
         env:
           HOST: ${{ secrets.HOST }}
           USER: ${{ secrets.USER }}
@@ -47,20 +79,9 @@ jobs:
           ssh -p "$PORT" "$USER@$HOST" << 'EOF'
             set -e
 
-            cd "/opt/apps/pickaso"
+            cd /opt/apps/pickaso
 
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
-
-            npm ci
-            npx prisma generate
             npx prisma migrate deploy
-            npm run build
 
-            if sudo systemctl is-active --quiet "pickaso"; then
-              sudo systemctl restart "pickaso"
-            else
-              sudo systemctl start "pickaso"
-            fi
+            sudo systemctl restart pickaso
           EOF
