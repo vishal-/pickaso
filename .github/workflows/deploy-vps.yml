@@ -83,5 +83,9 @@ jobs:
 
             cd /opt/apps/pickaso
 
+            rm -rf node_modules
+            
+            npm ci --omit=dev --include=optional
+
             sudo systemctl restart pickaso
           EOF
