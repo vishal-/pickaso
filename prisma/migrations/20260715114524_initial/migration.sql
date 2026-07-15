@@ -7,6 +7,7 @@ CREATE TABLE "user" (
     "firebaseUid" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+    "approved" BOOLEAN NOT NULL DEFAULT false,
     "name" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -67,6 +68,23 @@ CREATE TABLE "Image" (
     CONSTRAINT "Image_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "ImageVariant" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "imageId" UUID NOT NULL,
+    "slug" TEXT NOT NULL,
+    "format" TEXT NOT NULL,
+    "size" TEXT NOT NULL,
+    "width" INTEGER NOT NULL,
+    "height" INTEGER NOT NULL,
+    "fileSize" INTEGER NOT NULL,
+    "options" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ImageVariant_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "user_firebaseUid_key" ON "user"("firebaseUid");
 
@@ -100,6 +118,12 @@ CREATE INDEX "Image_collectionId_idx" ON "Image"("collectionId");
 -- CreateIndex
 CREATE INDEX "Image_createdAt_idx" ON "Image"("createdAt");
 
+-- CreateIndex
+CREATE INDEX "ImageVariant_imageId_idx" ON "ImageVariant"("imageId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ImageVariant_imageId_size_format_key" ON "ImageVariant"("imageId", "size", "format");
+
 -- AddForeignKey
 ALTER TABLE "App" ADD CONSTRAINT "App_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -117,3 +141,6 @@ ALTER TABLE "Image" ADD CONSTRAINT "Image_appId_fkey" FOREIGN KEY ("appId") REFE
 
 -- AddForeignKey
 ALTER TABLE "Image" ADD CONSTRAINT "Image_collectionId_fkey" FOREIGN KEY ("collectionId") REFERENCES "Collection"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ImageVariant" ADD CONSTRAINT "ImageVariant_imageId_fkey" FOREIGN KEY ("imageId") REFERENCES "Image"("id") ON DELETE CASCADE ON UPDATE CASCADE;
