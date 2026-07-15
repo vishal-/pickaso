@@ -12,8 +12,19 @@ export const runtime = "nodejs";
 
 const COLLECTION_NAME_PATTERN = /^[a-z0-9]+$/;
 
+interface ApiKeyData {
+  scopes: string[];
+  app: {
+    id: string;
+    tenantId: string;
+    tenant: {
+      approved: boolean;
+    };
+  };
+}
+
 type CachedApiKey = {
-  data: any;
+  data: ApiKeyData;
   timestamp: number;
 };
 
@@ -65,11 +76,7 @@ function getOutputSpec(format: string | undefined): OutputSpec | null {
   }
 }
 
-function createCuidLikeId(): string {
-  const ts = Date.now().toString(36);
-  const random = crypto.randomBytes(10).toString("hex");
-  return `${ts}${random}`.slice(0, 24);
-}
+
 
 const NANOID_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -116,7 +123,7 @@ export async function POST(request: Request) {
 
     const hashedKey = crypto.createHash("sha256").update(rawApiKey).digest("hex");
 
-    let apiKey: any = null;
+    let apiKey: ApiKeyData | null = null;
     const cachedKeyData = apiKeyCache.get(hashedKey);
     if (cachedKeyData && Date.now() - cachedKeyData.timestamp < API_KEY_CACHE_TTL_MS) {
       apiKey = cachedKeyData.data;
@@ -204,7 +211,7 @@ export async function POST(request: Request) {
     }
 
     const cacheKey = `${apiKey.app.id}:${requestedCollection}`;
-    let collectionId = collectionCache.get(cacheKey);
+    const collectionId = collectionCache.get(cacheKey);
     let collection: { id: string; name: string } | null = null;
 
     if (collectionId) {
@@ -272,9 +279,9 @@ export async function POST(request: Request) {
     const objectName = `${slug}.${outputSpec.extension}`;
     const objectKey = objectName;
 
-    const r2AccountId = getRequiredEnv("R2_ACCOUNT_ID");
-    const r2AccessKeyId = getRequiredEnv("R2_ACCESS_KEY_ID");
-    const r2SecretAccessKey = getRequiredEnv("R2_SECRET_ACCESS_KEY");
+    getRequiredEnv("R2_ACCOUNT_ID");
+    getRequiredEnv("R2_ACCESS_KEY_ID");
+    getRequiredEnv("R2_SECRET_ACCESS_KEY");
     const r2Bucket = getRequiredEnv("R2_BUCKET");
     const r2PublicBaseUrl = getRequiredEnv("R2_PUBLIC_BASE_URL");
 

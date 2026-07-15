@@ -41,7 +41,9 @@ export default function AppsPage() {
       };
       fetchApps();
     } else if (!authLoading || (user && !approved)) {
-      setAppsLoading(false);
+      Promise.resolve().then(() => {
+        if (active) setAppsLoading(false);
+      });
     }
     return () => {
       active = false;

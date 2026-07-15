@@ -20,6 +20,7 @@ export function LoginButton() {
         className="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-white/10 px-2.5 py-1.5 text-sm font-medium text-white transition hover:bg-white/15"
       >
         {avatarSrc ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={avatarSrc}
             alt={displayName}

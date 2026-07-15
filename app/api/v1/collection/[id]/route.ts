@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";

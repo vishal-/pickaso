@@ -230,7 +230,7 @@ export async function GET(
         throw new Error("R2 configuration is incomplete");
       }
 
-      const originalKey = (image.options as any).key;
+      const originalKey = (image.options as { key?: string })?.key;
       if (!originalKey) {
         throw new Error("Original object key missing in options");
       }
@@ -300,9 +300,10 @@ export async function GET(
           },
         });
         logger.info({ variantSlug, format: variantFormat, size: targetSize }, "Successfully created image variant in DB");
-      } catch (dbError: any) {
+      } catch (dbError) {
         // Gracefully handle concurrent write conflicts
-        if (dbError.code === "P2002") {
+        const err = dbError as { code?: string };
+        if (err.code === "P2002") {
           const concurrentVariant = await prisma.imageVariant.findUnique({
             where: {
               imageId_size_format: {
