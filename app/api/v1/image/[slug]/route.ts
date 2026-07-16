@@ -6,8 +6,6 @@ import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getR2Client, getOptionalEnv, deleteR2ObjectIfPossible } from "@/lib/r2";
 
-export const runtime = "nodejs";
-
 const SUPPORTED_FORMATS = ["webp", "png", "jpg", "jpeg", "avif", "tiff"];
 const SUPPORTED_SIZES = ["sm", "md", "lg"];
 const SIZE_MAP: Record<string, number> = {

@@ -5,8 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { getSessionTenantId } from "@/lib/session";
 import { deleteR2ObjectIfPossible } from "@/lib/r2";
 
-export const runtime = "nodejs";
-
 
 function getImageObjectKey(options: unknown): string | null {
   if (!options || typeof options !== "object") {

@@ -4,8 +4,6 @@ import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getSessionTenantId } from "@/lib/session";
 
-export const runtime = "nodejs";
-
 export async function GET(request: Request) {
   logger.info({ route: "/api/v1/collections", method: "GET" }, "Incoming collections list request");
 

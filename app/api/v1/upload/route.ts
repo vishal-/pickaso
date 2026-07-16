@@ -8,8 +8,6 @@ import logger from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getR2Client, getRequiredEnv } from "@/lib/r2";
 
-export const runtime = "nodejs";
-
 const COLLECTION_NAME_PATTERN = /^[a-z0-9]+$/;
 
 interface ApiKeyData {
