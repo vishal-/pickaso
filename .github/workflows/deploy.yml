@@ -1,0 +1,56 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Trust remote
+        env:
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT || '22' }}
+        run: |
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          PORT: ${{ secrets.PORT || '22' }}
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" << 'EOF'
+            set -e
+
+            cd /opt/apps/pickaso
+
+            git fetch origin
+            git reset --hard origin/main
+
+            # Dummy DATABASE_URL for Prisma generate / Next.js build
+            export DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+
+            npm ci
+
+            npm run build
+
+            sudo systemctl restart pickaso
+          EOF
