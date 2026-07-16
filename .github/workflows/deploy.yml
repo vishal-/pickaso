@@ -45,11 +45,12 @@ jobs:
             git fetch origin
             git reset --hard origin/main
 
-            # Dummy DATABASE_URL for Prisma generate / Next.js build
-            export DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+            # Load production environment
+            set -a
+            source /opt/apps/secrets/pickaso.env
+            set +a
 
             npm ci
-
             npm run build
 
             sudo systemctl restart pickaso
